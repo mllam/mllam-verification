@@ -1,0 +1,25 @@
+schema_version: v0.1.0
+
+inputs:
+  datasets:
+    initial:
+      path: /path/to/initial.zarr
+    target:
+      path: /path/to/target.zarr
+    prediction:
+      path: /path/to/prediction.zarr
+  variables:
+    - 2t
+    - 10u
+  coord_ranges:
+    time:
+      start: 1990-09-03T00:00
+      end: 1990-09-09T00:00
+      step: PT3H
+
+methods:
+  - global_persistence
+  - gridpoint_persistence
+
+output:
+  path: /path/to/output/directory
