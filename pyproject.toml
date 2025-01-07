@@ -1,0 +1,31 @@
+[project]
+name = "mllam-verification"
+version = "0.1.0"
+description = "Verification of neural-lam, e.g. performance of the model relative to the truth, persistence, etc."
+authors = [
+    {name = "Martin Frølund", email = "maf@dmi.dk"},
+]
+dependencies = [
+    "xarray>=2024.2.0",
+    "zarr>=2.17.0",
+    "loguru>=0.7.2",
+]
+requires-python = ">=3.9"
+readme = "README.md"
+license = {text = "MIT"}
+
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
+
+
+[tool.isort]
+profile = "black"
+
+[tool.pdm]
+distribution = true
+[tool.pdm.dev-dependencies]
+dev = [
+    "pytest>=8.0.2",
+    "pre-commit>=3.7.1",
+]
