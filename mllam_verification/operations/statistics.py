@@ -4,6 +4,8 @@ from typing import List, Optional
 import scores.continuous as scc_cont
 import xarray as xr
 
+xr.set_options(keep_attrs=True)
+
 
 def compute_pipeline_statistic(
     datasets: List[xr.Dataset],
@@ -84,39 +86,46 @@ def compute_pipeline_statistic(
         else:
             raise NotImplementedError(f"stats_op {stats_op} not supported")
 
-    cell_methods_str = " ".join(cell_methods)
-    # Add cell_methods attribute to all variables
-    for var in ds_stat.data_vars:
-        ds_stat[var].attrs["cell_methods"] = cell_methods_str
+    # Add cell_methods attribute to all variables in addition to existing cell_methods
+    if cell_methods:
+        for var in ds_stat.data_vars:
+            update_cell_methods(ds_stat[var], cell_methods)
 
     return ds_stat
 
 
 def rmse(
-    ds_prediction: xr.Dataset, ds_reference: xr.Dataset, reduce_dims: List[str]
+    ds_prediction: xr.Dataset, ds_reference: xr.Dataset, **stats_op_kwargs
 ) -> xr.Dataset:
     """Compute the root mean squared error across grid_index for all variables.
 
     Args:
-        ds (xr.Dataset): Input dataset
+        ds_prediction (xr.Dataset): Prediction dataset
+        ds_reference (xr.Dataset): Reference dataset
+        reduce_dims (List[str]): Dimensions to reduce over
     Returns:
         xr.Dataset: Dataset with the computed statistical variables
     """
     ds_rmse = compute_pipeline_statistic(
         datasets=[ds_reference, ds_prediction],
         stats_op=scc_cont.rmse,
-        stats_op_kwargs={"reduce_dims": reduce_dims},
+        stats_op_kwargs=stats_op_kwargs,
     )
+
+    # Get difference in dimensions betwee input datasets and ds_rmse.
+    # Input dataset are assumed to have the same dimensions.
+    reduce_dims = list(set(ds_reference.dims) - set(ds_rmse.dims))
+    new_cell_methods = [",".join(reduce_dims) + ": root_mean_square"]
 
     # Update cell_methods attributes
     for _, da_var in ds_rmse.items():
-        da_var.attrs["cell_methods"] = ",".join(reduce_dims) + ": root_mean_square"
+        update_cell_methods(da_var, new_cell_methods)
 
     return ds_rmse
 
 
 def mae(
-    ds_prediction: xr.Dataset, ds_reference: xr.Dataset, reduce_dims: List[str]
+    ds_prediction: xr.Dataset, ds_reference: xr.Dataset, **stats_op_kwargs
 ) -> xr.Dataset:
     """Compute the mean absolute error across specified dimensions.
 
@@ -127,20 +136,25 @@ def mae(
     Returns:
         xr.Dataset: Dataset with the mean absolute error computed
     """
-    ds_rmse = compute_pipeline_statistic(
+    ds_mae = compute_pipeline_statistic(
         datasets=[ds_reference, ds_prediction],
         stats_op=scc_cont.mae,
-        stats_op_kwargs={"reduce_dims": reduce_dims},
+        stats_op_kwargs=stats_op_kwargs,
     )
 
+    # Get difference in dimensions betwee input datasets and ds_rmse.
+    # Input dataset are assumed to have the same dimensions.
+    reduce_dims = list(set(ds_reference.dims) - set(ds_mae.dims))
+    new_cell_methods = [",".join(reduce_dims) + ": mean_absolute_error"]
+
     # Update cell_methods attributes
-    for _, da_var in ds_rmse.items():
-        da_var.attrs["cell_methods"] = ",".join(reduce_dims) + ": mean_absolute_error"
+    for _, da_var in ds_mae.items():
+        update_cell_methods(da_var, new_cell_methods)
 
-    return ds_rmse
+    return ds_mae
 
 
-def mean(ds: xr.Dataset, reduce_dims: List[str]) -> xr.Dataset:
+def mean(ds: xr.Dataset, **stats_op_kwargs) -> xr.Dataset:
     """Compute the mean across specified dimensions.
 
     Args:
@@ -151,11 +165,32 @@ def mean(ds: xr.Dataset, reduce_dims: List[str]) -> xr.Dataset:
     ds_mean = compute_pipeline_statistic(
         datasets=[ds],
         stats_op="mean",
-        stats_op_kwargs={"dim": reduce_dims},
+        stats_op_kwargs=stats_op_kwargs,
     )
+
+    # Get difference in dimensions betwee input datasets and ds_rmse.
+    # Input dataset are assumed to have the same dimensions.
+    reduce_dims = list(set(ds.dims) - set(ds_mean.dims))
+    new_cell_methods = [",".join(reduce_dims) + ": mean"]
 
     # Update cell_methods attributes
     for _, da_var in ds_mean.items():
-        da_var.attrs["cell_methods"] = ",".join(reduce_dims) + ": mean"
+        update_cell_methods(da_var, new_cell_methods)
 
     return ds_mean
+
+
+def update_cell_methods(da: xr.DataArray, cell_methods: List[str]):
+    """Update the cell_methods attribute of a DataArray with new cell_methods.
+
+    Parameters
+    ----------
+    da : xr.DataArray
+        DataArray to update cell_methods attribute
+    cell_methods : List[str]
+        List of cell_methods to add to the existing cell_methods attribute
+    """
+    existing_cell_methods = da.attrs.get("cell_methods", "")
+    if existing_cell_methods:
+        cell_methods.insert(0, existing_cell_methods)
+    da.attrs["cell_methods"] = " ".join(cell_methods)
