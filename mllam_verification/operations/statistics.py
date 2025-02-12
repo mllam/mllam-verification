@@ -1,6 +1,7 @@
 from types import FunctionType
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
+import numpy as np
 import scores.continuous as scc_cont
 import xarray as xr
 
@@ -194,3 +195,37 @@ def update_cell_methods(da: xr.DataArray, cell_methods: List[str]):
     if existing_cell_methods:
         cell_methods.insert(0, existing_cell_methods)
     da.attrs["cell_methods"] = " ".join(cell_methods)
+
+
+def add_persistence_to_datasets(
+    ds_reference: xr.Dataset, ds_prediction: xr.Dataset
+) -> Tuple[xr.Dataset, xr.Dataset]:
+    """Add persistence datasource to datasets.
+
+    Parameters
+    ----------
+    ds_reference : xr.Dataset
+        Reference dataset.
+    ds_prediction : xr.Dataset
+        Prediction dataset.
+
+    Returns
+    -------
+    Tuple[xr.Dataset, xr.Dataset]
+        Reference and prediction datasets with persistence datasource added.
+    """
+    # Set persistence prediction as the reference shifted by 1
+    ds_persistence_prediction = ds_reference.shift(elapsed_forecast_duration=1)
+    # Save original datasources before concatenating
+    reference_datasources = ds_reference["datasource"].values
+    # Concatenate the datasets
+    ds_reference = xr.concat([ds_reference, ds_reference], dim="datasource")
+    ds_prediction = xr.concat(
+        [ds_prediction, ds_persistence_prediction], dim="datasource"
+    )
+    # Update datasource coordinates
+    ds_reference["datasource"] = ds_prediction["datasource"] = np.append(
+        reference_datasources, "persistence"
+    )
+
+    return ds_reference, ds_prediction

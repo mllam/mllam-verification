@@ -215,31 +215,31 @@ def fixture_ds_prediction_1d(
     )
 
 
-@pytest.fixture(name="ds_reference_2d", scope="session")
-def fixture_ds_reference_2d(
-    unique_reference_times: NDArray,
-    moving_gaussian_blobs: NDArray,
-    meshgrid: MeshGrid,
-) -> xr.Dataset:
-    """Fixture that returns Dataset 2d moving gaussian blobs reference data."""
-    return xr.Dataset(
-        {
-            f"feature{i}": (
-                [
-                    "time",
-                    "x",
-                    "y",
-                ],
-                moving_gaussian_blobs[..., i],
-            )
-            for i in np.arange(NFEATURES)
-        },
-        coords={
-            "time": unique_reference_times,
-            "x": meshgrid.x[0, :],
-            "y": meshgrid.y[:, 0],
-        },
-    )
+# @pytest.fixture(name="ds_reference_2d", scope="session")
+# def fixture_ds_reference_2d(
+#     unique_reference_times: NDArray,
+#     moving_gaussian_blobs: NDArray,
+#     meshgrid: MeshGrid,
+# ) -> xr.Dataset:
+#     """Fixture that returns Dataset 2d moving gaussian blobs reference data."""
+#     return xr.Dataset(
+#         {
+#             f"feature{i}": (
+#                 [
+#                     "time",
+#                     "x",
+#                     "y",
+#                 ],
+#                 moving_gaussian_blobs[..., i],
+#             )
+#             for i in np.arange(NFEATURES)
+#         },
+#         coords={
+#             "time": unique_reference_times,
+#             "x": meshgrid.x[0, :],
+#             "y": meshgrid.y[:, 0],
+#         },
+#     )
 
 
 @pytest.fixture(name="moving_gaussian_blobs_per_reference_time_2d", scope="session")
@@ -261,8 +261,8 @@ def fixture_moving_gaussian_blobs_per_reference_time_2d(
     )[0]
 
 
-@pytest.fixture(name="ds_reference_2d_relevant_times_and_aligned", scope="session")
-def fixture_ds_reference_2d_relevant_times_and_aligned(
+@pytest.fixture(name="ds_reference_2d", scope="session")
+def fixture_ds_reference_2d(
     moving_gaussian_blobs_per_reference_time_2d: NDArray,
     meshgrid: MeshGrid,
     start_times: NDArray,

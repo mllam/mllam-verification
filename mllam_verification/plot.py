@@ -1,8 +1,7 @@
-from types import ModuleType
-from typing import Optional, Tuple
+from types import FunctionType
+from typing import Optional
 
 import matplotlib.pyplot as plt
-import numpy as np
 import xarray as xr
 
 import mllam_verification.operations.statistics as mlverif_stats
@@ -12,15 +11,54 @@ def plot_single_metric_timeseries(
     ds_reference: xr.Dataset,
     ds_prediction: xr.Dataset,
     variable: str,
-    stats_operation: ModuleType = mlverif_stats.rmse,
+    stats_operation: FunctionType = mlverif_stats.rmse,
     axes: Optional[plt.Axes] = None,
     include_persistence: Optional[bool] = True,
     hue: Optional[str] = "datasource",
     xarray_plot_kwargs: Optional[dict] = {},
-):
+) -> plt.Axes:
     """Plot a single-metric-timeseries diagram for a given variable and metric.
 
-    The metric is calculated from ds_reference and ds_prediction.
+    The metric is calculated from ds_reference and ds_prediction, which should
+    have one of the following specifications:
+
+    A) For data with non-regular grid:
+
+    Dimensions: [start_time, elapsed_forecast_duration, grid_index, datasource]
+    Data variables:
+    - state [start_time, elapsed_forecast_duration, grid_index, datasource]:
+    Coordinates:
+    - start_time:
+        the start time as a datetime object
+    - elapsed_forecast_duration:
+        the elapsed forecast duration as a timedelta object
+    - grid_index:
+        the index of the gridpoint
+    - datasource:
+        the source of the data, e.g. model name, persistence, etc.
+
+    B) For data with regular grid:
+
+    Dimensions: [start_time, elapsed_forecast_duration, x, y, datasource]
+    Data variables:
+    - state [start_time, elapsed_forecast_duration, x, y, datasource]:
+    Coordinates:
+    - start_time:
+        the analysis time as a datetime object
+    - elapsed_forecast_duration:
+        the elapsed forecast duration as a timedelta object
+    - x:
+        the x coordinate of the gridpoint
+    - y:
+        the y coordinate of the gridpoint
+    - datasource:
+        the source of the data, e.g. model name, persistence, etc.
+
+    The `start_time` dimension can be omitted from the dataset. If it is present,
+    the metric will be averaged along the `start_time` dimension before plotting.
+
+    In case B), the `x` and `y` dimensions will be stacked into a single `grid_index`
+    dimension before plotting.
 
     Parameters
     ----------
@@ -30,16 +68,25 @@ def plot_single_metric_timeseries(
         Prediction dataset.
     variable : str
         Variable to calculate metric of.
-    metric : str
-        Metric to calculate.
+    stats_operation : FunctionType, optional
+        Statistics operation to calculate the metric, by default mlverif_stats.rmse
     axes : plt.Axes, optional
         Axes to plot on, by default None
+    include_persistence : bool, optional
+        Whether to include persistence in the plot, by default True
+    hue : str, optional
+        Hue to plot on, by default "datasource"
     xarray_plot_kwargs : dict, optional
         Additional arguments to pass to xarray's plot function, by default {}
+
+    Returns
+    -------
+    plt.Axes
+        Axes with the plot added.
     """
 
     if include_persistence:
-        ds_reference, ds_prediction = add_persistence_to_datasets(
+        ds_reference, ds_prediction = mlverif_stats.add_persistence_to_datasets(
             ds_reference, ds_prediction
         )
 
@@ -49,10 +96,12 @@ def plot_single_metric_timeseries(
     if "x" in ds_reference.dims and "y" in ds_reference.dims:
         ds_reference = ds_reference.stack(grid_index=["x", "y"])
 
+    # Apply statistical operation
     ds_metric: xr.Dataset = stats_operation(
         ds_reference, ds_prediction, reduce_dims=["grid_index"]
     )
-    ds_metric: xr.Dataset = mlverif_stats.mean(ds_metric, dim=["start_time"])
+    if "start_time" in ds_metric.dims:
+        ds_metric: xr.Dataset = mlverif_stats.mean(ds_metric, dim=["start_time"])
 
     if axes is None:
         _, axes = plt.subplots()
@@ -77,7 +126,22 @@ def plot_single_metric_gridded_map(
 ):
     """Plot a single-metric-gridded-map diagram for a given variable and metric.
 
-    The metric is calculated from ds_reference and ds_prediction.
+    The metric is calculated from ds_reference and ds_prediction, which should
+    have the following specification:
+
+    Dimensions: [start_time, x, y]
+    Data variables:
+    - state [start_time, x, y]:
+    Coordinates:
+    - start_time:
+        the analysis time as a datetime object
+    - x:
+        the x coordinate of the gridpoint
+    - y:
+        the y coordinate of the gridpoint
+
+    The `start_time` dimension can be omitted from the dataset. If it is present,
+    the metric will be averaged along the `start_time` dimension before plotting.
 
     Parameters
     ----------
@@ -91,6 +155,11 @@ def plot_single_metric_gridded_map(
         Axes to plot on, by default None
     xarray_plot_kwargs : dict, optional
         Additional arguments to pass to xarray's plot function, by default {}
+
+    Returns
+    -------
+    plt.Axes
+        Axes with the plot added.
     """
 
     # Check if datasets have necessary dimensions
@@ -104,7 +173,8 @@ def plot_single_metric_gridded_map(
         )
 
     ds_metric = ds_prediction - ds_reference
-    ds_metric: xr.Dataset = mlverif_stats.mean(ds_metric, dim=["start_time"])
+    if "start_time" in ds_metric.dims:
+        ds_metric: xr.Dataset = mlverif_stats.mean(ds_metric, dim=["start_time"])
 
     if axes is None:
         _, axes = plt.subplots()
@@ -129,14 +199,34 @@ def plot_single_metric_hovmoller(
     ds_reference: xr.Dataset,
     ds_prediction: xr.Dataset,
     variable: str,
-    preserve_spatial_dim: str,
-    stats_operation: Optional[ModuleType] = mlverif_stats.rmse,
+    preserve_dim: str,
+    stats_operation: Optional[FunctionType] = mlverif_stats.rmse,
     axes: Optional[plt.Axes] = None,
     xarray_plot_kwargs: Optional[dict] = {},
 ):
     """Plot a single-metric-hovmoller diagram for a given variable and metric.
 
-    The metric is calculated from ds_reference and ds_prediction.
+    The plot will have time on the x-axis, and the `preserve_dim`
+    dimension on the y-axis.
+
+    The metric is calculated from ds_reference and ds_prediction, which should
+    have one of the following specifications:
+
+    Dimensions: [start_time, elapsed_forecast_duration, `spatial_dim`, ...]
+    Data variables:
+    - state [start_time, elapsed_forecast_duration, `spatial_dim`, ...]:
+    Coordinates:
+    - start_time:
+        the analysis time as a datetime object
+    - elapsed_forecast_duration:
+        the elapsed forecast duration as a timedelta object
+    - `spatial_dim`:
+        the coordinate of the spatial dimension to be plotted up the y-axis
+    - ...:
+        Any other dimensions, which will be reduced along
+
+    The `start_time` dimension can be omitted from the dataset. If it is present,
+    the metric will be averaged along the `start_time` dimension before plotting.
 
     Parameters
     ----------
@@ -146,28 +236,36 @@ def plot_single_metric_hovmoller(
         Prediction dataset.
     variable : str
         Variable to plot.
+    preserve_dim : str
+        Dimension to preserve along the y-axis.
+    stats_operation : FunctionType, optional
+        Statistics operation to calculate the metric, by default mlverif_stats.rmse
     axes : plt.Axes, optional
         Axes to plot on, by default None
     xarray_plot_kwargs : dict, optional
         Additional arguments to pass to xarray's plot function, by default {}
+
+    Returns
+    -------
+    plt.Axes
+        Axes with the plot added.
     """
 
     # Check if datasets have necessary dimensions
-    if (
-        preserve_spatial_dim not in ds_prediction.dims
-        or preserve_spatial_dim not in ds_reference.dims
-    ):
+    if preserve_dim not in ds_prediction.dims or preserve_dim not in ds_reference.dims:
         raise ValueError(
-            "Prediction and reference datasets must have `preserve_spatial_dim`"
+            "Prediction and reference datasets must have `preserve_dim`"
             " dimension to plot hövmöller diagram."
         )
 
+    # Apply statistical operation
     ds_metric: xr.Dataset = stats_operation(
         ds_reference,
         ds_prediction,
-        preserve_dims=[preserve_spatial_dim, "start_time", "elapsed_forecast_duration"],
+        preserve_dims=[preserve_dim, "start_time", "elapsed_forecast_duration"],
     )
-    ds_metric: xr.Dataset = mlverif_stats.mean(ds_metric, dim=["start_time"])
+    if "start_time" in ds_metric.dims:
+        ds_metric: xr.Dataset = mlverif_stats.mean(ds_metric, dim=["start_time"])
 
     if axes is None:
         _, axes = plt.subplots()
@@ -175,49 +273,15 @@ def plot_single_metric_hovmoller(
     # Check if dimensions are present
     if len(ds_metric.dims) != 2:
         raise ValueError(
-            "Metric dataset must have 2 dimensions (`preserve_spatial_dim`, "
+            "Metric dataset must have 2 dimensions (`preserve_dim`, "
             "elapsed_forecast_duration) to plot a gridded map"
         )
 
     ds_metric[variable].plot.pcolormesh(
         x="elapsed_forecast_duration",
-        y=preserve_spatial_dim,
+        y=preserve_dim,
         ax=axes,
         **xarray_plot_kwargs,
     )
 
     return axes
-
-
-def add_persistence_to_datasets(
-    ds_reference: xr.Dataset, ds_prediction: xr.Dataset
-) -> Tuple[xr.Dataset, xr.Dataset]:
-    """Add persistence datasource to datasets.
-
-    Parameters
-    ----------
-    ds_reference : xr.Dataset
-        Reference dataset.
-    ds_prediction : xr.Dataset
-        Prediction dataset.
-
-    Returns
-    -------
-    Tuple[xr.Dataset, xr.Dataset]
-        Reference and prediction datasets with persistence datasource added.
-    """
-    # Set persistence prediction as the reference shifted by 1
-    ds_persistence_prediction = ds_reference.shift(elapsed_forecast_duration=1)
-    # Save original datasources before concatenating
-    reference_datasources = ds_reference["datasource"].values
-    # Concatenate the datasets
-    ds_reference = xr.concat([ds_reference, ds_reference], dim="datasource")
-    ds_prediction = xr.concat(
-        [ds_prediction, ds_persistence_prediction], dim="datasource"
-    )
-    # Update datasource coordinates
-    ds_reference["datasource"] = ds_prediction["datasource"] = np.append(
-        reference_datasources, "persistence"
-    )
-
-    return ds_reference, ds_prediction
