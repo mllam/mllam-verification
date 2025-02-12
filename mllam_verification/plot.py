@@ -8,25 +8,22 @@ import mllam_verification.operations.statistics as mlverif_stats
 
 
 def plot_single_metric_timeseries(
-    ds_reference: xr.Dataset,
-    ds_prediction: xr.Dataset,
-    variable: str,
+    da_reference: xr.DataArray,
+    da_prediction: xr.DataArray,
     stats_operation: FunctionType = mlverif_stats.rmse,
     axes: Optional[plt.Axes] = None,
     include_persistence: Optional[bool] = True,
     hue: Optional[str] = "datasource",
     xarray_plot_kwargs: Optional[dict] = {},
 ) -> plt.Axes:
-    """Plot a single-metric-timeseries diagram for a given variable and metric.
+    """Plot a single-metric-timeseries diagram for a given metric.
 
-    The metric is calculated from ds_reference and ds_prediction, which should
+    The metric is calculated from da_reference and da_prediction, which should
     have one of the following specifications:
 
     A) For data with non-regular grid:
 
     Dimensions: [start_time, elapsed_forecast_duration, grid_index, datasource]
-    Data variables:
-    - state [start_time, elapsed_forecast_duration, grid_index, datasource]:
     Coordinates:
     - start_time:
         the start time as a datetime object
@@ -40,8 +37,6 @@ def plot_single_metric_timeseries(
     B) For data with regular grid:
 
     Dimensions: [start_time, elapsed_forecast_duration, x, y, datasource]
-    Data variables:
-    - state [start_time, elapsed_forecast_duration, x, y, datasource]:
     Coordinates:
     - start_time:
         the analysis time as a datetime object
@@ -54,7 +49,7 @@ def plot_single_metric_timeseries(
     - datasource:
         the source of the data, e.g. model name, persistence, etc.
 
-    The `start_time` dimension can be omitted from the dataset. If it is present,
+    The `start_time` dimension can be omitted from the dataarray. If it is present,
     the metric will be averaged along the `start_time` dimension before plotting.
 
     In case B), the `x` and `y` dimensions will be stacked into a single `grid_index`
@@ -62,10 +57,10 @@ def plot_single_metric_timeseries(
 
     Parameters
     ----------
-    ds_reference : xr.Dataset
-        Reference dataset.
-    ds_prediction : xr.Dataset
-        Prediction dataset.
+    da_reference : xr.DataArray
+        Reference dataarray.
+    da_prediction : xr.DataArray
+        Prediction dataarray.
     variable : str
         Variable to calculate metric of.
     stats_operation : FunctionType, optional
@@ -86,47 +81,46 @@ def plot_single_metric_timeseries(
     """
 
     if include_persistence:
-        ds_reference, ds_prediction = mlverif_stats.add_persistence_to_datasets(
-            ds_reference, ds_prediction
+        da_reference, da_prediction = mlverif_stats.add_persistence_to_dataarray(
+            da_reference, da_prediction
         )
 
     # Stack the x and y dimensions into a single grid index if necessary
-    if "x" in ds_prediction.dims and "y" in ds_prediction.dims:
-        ds_prediction = ds_prediction.stack(grid_index=["x", "y"])
-    if "x" in ds_reference.dims and "y" in ds_reference.dims:
-        ds_reference = ds_reference.stack(grid_index=["x", "y"])
+    if "x" in da_prediction.dims and "y" in da_prediction.dims:
+        da_prediction = da_prediction.stack(grid_index=["x", "y"])
+    if "x" in da_reference.dims and "y" in da_reference.dims:
+        da_reference = da_reference.stack(grid_index=["x", "y"])
 
     # Apply statistical operation
-    ds_metric: xr.Dataset = stats_operation(
-        ds_reference, ds_prediction, reduce_dims=["grid_index"]
+    da_metric: xr.DataArray = stats_operation(
+        da_reference, da_prediction, reduce_dims=["grid_index"]
     )
-    if "start_time" in ds_metric.dims:
-        ds_metric: xr.Dataset = mlverif_stats.mean(ds_metric, dim=["start_time"])
+    if "start_time" in da_metric.dims:
+        da_metric: xr.DataArray = mlverif_stats.mean(da_metric, dim=["start_time"])
 
     if axes is None:
         _, axes = plt.subplots()
 
-    if hue not in ds_metric.coords:
+    if hue not in da_metric.coords:
         raise ValueError(
-            f"Dataset does not contain a coordinate named {hue}, "
+            f"DataArray does not contain a coordinate named {hue}, "
             + "please use a different coordinate as hue"
         )
 
-    ds_metric[variable].plot.line(ax=axes, hue=hue, **xarray_plot_kwargs)
+    da_metric.plot.line(ax=axes, hue=hue, **xarray_plot_kwargs)
 
     return axes
 
 
 def plot_single_metric_gridded_map(
-    ds_reference: xr.Dataset,
-    ds_prediction: xr.Dataset,
-    variable: str,
+    da_reference: xr.DataArray,
+    da_prediction: xr.DataArray,
     axes: Optional[plt.Axes] = None,
     xarray_plot_kwargs: Optional[dict] = {},
 ):
-    """Plot a single-metric-gridded-map diagram for a given variable and metric.
+    """Plot a single-metric-gridded-map diagram for a given metric.
 
-    The metric is calculated from ds_reference and ds_prediction, which should
+    The metric is calculated from da_reference and da_prediction, which should
     have the following specification:
 
     Dimensions: [start_time, x, y]
@@ -140,15 +134,15 @@ def plot_single_metric_gridded_map(
     - y:
         the y coordinate of the gridpoint
 
-    The `start_time` dimension can be omitted from the dataset. If it is present,
+    The `start_time` dimension can be omitted from the dataarray. If it is present,
     the metric will be averaged along the `start_time` dimension before plotting.
 
     Parameters
     ----------
-    ds_reference : xr.Dataset
-        Reference dataset.
-    ds_prediction : xr.Dataset
-        Prediction dataset.
+    da_reference : xr.DataArray
+        Reference dataarray.
+    da_prediction : xr.DataArray
+        Prediction dataarray.
     variable : str
         Variable to plot.
     axes : plt.Axes, optional
@@ -162,30 +156,30 @@ def plot_single_metric_gridded_map(
         Axes with the plot added.
     """
 
-    # Check if datasets have necessary dimensions
-    if "x" not in ds_prediction.dims or "y" not in ds_prediction.dims:
+    # Check if dataarrays have necessary dimensions
+    if "x" not in da_prediction.dims or "y" not in da_prediction.dims:
         raise ValueError(
-            "Prediction dataset must have x and y dimensions to plot a gridded map"
+            "Prediction dataarray must have x and y dimensions to plot a gridded map"
         )
-    if "x" not in ds_reference.dims and "y" not in ds_reference.dims:
+    if "x" not in da_reference.dims and "y" not in da_reference.dims:
         raise ValueError(
-            "Reference dataset must have x and y dimensions to plot a gridded map"
+            "Reference dataarray must have x and y dimensions to plot a gridded map"
         )
 
-    ds_metric = ds_prediction - ds_reference
-    if "start_time" in ds_metric.dims:
-        ds_metric: xr.Dataset = mlverif_stats.mean(ds_metric, dim=["start_time"])
+    da_metric = da_prediction - da_reference
+    if "start_time" in da_metric.dims:
+        da_metric: xr.DataArray = mlverif_stats.mean(da_metric, dim=["start_time"])
 
     if axes is None:
         _, axes = plt.subplots()
 
     # Check if dimensions are present
-    if len(ds_metric.dims) != 2:
+    if len(da_metric.dims) != 2:
         raise ValueError(
-            "Metric dataset must have 2 dimensions (x, y) to plot a gridded map"
+            "Metric DataArray must have 2 dimensions (x, y) to plot a gridded map"
         )
 
-    ds_metric[variable].plot.pcolormesh(
+    da_metric.plot.pcolormesh(
         x="x",
         y="y",
         ax=axes,
@@ -196,25 +190,22 @@ def plot_single_metric_gridded_map(
 
 
 def plot_single_metric_hovmoller(
-    ds_reference: xr.Dataset,
-    ds_prediction: xr.Dataset,
-    variable: str,
+    da_reference: xr.DataArray,
+    da_prediction: xr.DataArray,
     preserve_dim: str,
     stats_operation: Optional[FunctionType] = mlverif_stats.rmse,
     axes: Optional[plt.Axes] = None,
     xarray_plot_kwargs: Optional[dict] = {},
 ):
-    """Plot a single-metric-hovmoller diagram for a given variable and metric.
+    """Plot a single-metric-hovmoller diagram for a given metric.
 
     The plot will have time on the x-axis, and the `preserve_dim`
     dimension on the y-axis.
 
-    The metric is calculated from ds_reference and ds_prediction, which should
+    The metric is calculated from da_reference and da_prediction, which should
     have one of the following specifications:
 
     Dimensions: [start_time, elapsed_forecast_duration, `spatial_dim`, ...]
-    Data variables:
-    - state [start_time, elapsed_forecast_duration, `spatial_dim`, ...]:
     Coordinates:
     - start_time:
         the analysis time as a datetime object
@@ -225,15 +216,15 @@ def plot_single_metric_hovmoller(
     - ...:
         Any other dimensions, which will be reduced along
 
-    The `start_time` dimension can be omitted from the dataset. If it is present,
+    The `start_time` dimension can be omitted from the dataarray. If it is present,
     the metric will be averaged along the `start_time` dimension before plotting.
 
     Parameters
     ----------
-    ds_reference : xr.Dataset
-        Reference dataset.
-    ds_prediction : xr.Dataset
-        Prediction dataset.
+    da_reference : xr.DataArray
+        Reference dataarray.
+    da_prediction : xr.DataArray
+        Prediction dataarray.
     variable : str
         Variable to plot.
     preserve_dim : str
@@ -251,21 +242,21 @@ def plot_single_metric_hovmoller(
         Axes with the plot added.
     """
 
-    # Check if datasets have necessary dimensions
-    if preserve_dim not in ds_prediction.dims or preserve_dim not in ds_reference.dims:
+    # Check if dataarrays have necessary dimensions
+    if preserve_dim not in da_prediction.dims or preserve_dim not in da_reference.dims:
         raise ValueError(
-            "Prediction and reference datasets must have `preserve_dim`"
+            "Prediction and reference dataarrays must have `preserve_dim`"
             " dimension to plot hövmöller diagram."
         )
 
     # Apply statistical operation
-    ds_metric: xr.Dataset = stats_operation(
-        ds_reference,
-        ds_prediction,
+    ds_metric: xr.DataArray = stats_operation(
+        da_reference,
+        da_prediction,
         preserve_dims=[preserve_dim, "start_time", "elapsed_forecast_duration"],
     )
     if "start_time" in ds_metric.dims:
-        ds_metric: xr.Dataset = mlverif_stats.mean(ds_metric, dim=["start_time"])
+        ds_metric: xr.DataArray = mlverif_stats.mean(ds_metric, dim=["start_time"])
 
     if axes is None:
         _, axes = plt.subplots()
@@ -273,11 +264,11 @@ def plot_single_metric_hovmoller(
     # Check if dimensions are present
     if len(ds_metric.dims) != 2:
         raise ValueError(
-            "Metric dataset must have 2 dimensions (`preserve_dim`, "
+            "Metric dataarray must have 2 dimensions (`preserve_dim`, "
             "elapsed_forecast_duration) to plot a gridded map"
         )
 
-    ds_metric[variable].plot.pcolormesh(
+    ds_metric.plot.pcolormesh(
         x="elapsed_forecast_duration",
         y=preserve_dim,
         ax=axes,
