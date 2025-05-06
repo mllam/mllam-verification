@@ -67,12 +67,6 @@ def compute_pipeline_statistic(
             # Update the cell_methods with the operation applied
             cell_methods.append(f"{diff_dim}: diff (interval: {diff_unit})")
 
-        if groupby:
-            # Apply the groupby operation
-            ds = ds.groupby(groupby)
-            # Update the cell_methods with the operation applied
-            cell_methods.append(f"{groupby}: groupby")
-
     if stats_op:
         if isinstance(stats_op, FunctionType):
             ds_stat: xr.Dataset | xr.DataArray = stats_op(*datasets, **stats_op_kwargs)
@@ -89,6 +83,12 @@ def compute_pipeline_statistic(
         else:
             raise NotImplementedError(f"stats_op {stats_op} not supported")
 
+    if groupby:
+        # Apply the groupby operation
+        ds_stat = ds_stat.groupby(groupby).mean()
+        # Update the cell_methods with the operation applied
+        cell_methods.append(f"{groupby}: groupby, mean")
+
     # Add cell_methods attribute to all variables in addition to existing cell_methods
     if cell_methods:
         if isinstance(ds_stat, xr.DataArray):
@@ -103,6 +103,7 @@ def compute_pipeline_statistic(
 def rmse(
     ds_prediction: xr.Dataset | xr.DataArray,
     ds_reference: xr.Dataset | xr.DataArray,
+    groupby: Optional[str] = None,
     **stats_op_kwargs,
 ) -> xr.Dataset | xr.DataArray:
     """Compute the root mean squared error across grid_index for all variables.
@@ -117,6 +118,7 @@ def rmse(
     ds_rmse = compute_pipeline_statistic(
         datasets=[ds_reference, ds_prediction],
         stats_op=scc_cont.rmse,
+        groupby=groupby,
         stats_op_kwargs=stats_op_kwargs,
     )
 
@@ -138,8 +140,9 @@ def rmse(
 
 
 def mae(
-    ds_prediction: xr.Dataset | xr.DataArray,
     ds_reference: xr.Dataset | xr.DataArray,
+    ds_prediction: xr.Dataset | xr.DataArray,
+    groupby: Optional[str] = None,
     **stats_op_kwargs,
 ) -> xr.Dataset | xr.DataArray:
     """Compute the mean absolute error across specified dimensions.
@@ -154,6 +157,7 @@ def mae(
     ds_mae = compute_pipeline_statistic(
         datasets=[ds_reference, ds_prediction],
         stats_op=scc_cont.mae,
+        groupby=groupby,
         stats_op_kwargs=stats_op_kwargs,
     )
 

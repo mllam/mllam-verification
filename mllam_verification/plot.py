@@ -1,5 +1,5 @@
 from types import FunctionType
-from typing import Optional
+from typing import Literal, Optional
 
 import matplotlib.pyplot as plt
 import xarray as xr
@@ -12,6 +12,8 @@ def plot_single_metric_timeseries(
     da_prediction: xr.DataArray,
     stats_operation: FunctionType = mlverif_stats.rmse,
     axes: Optional[plt.Axes] = None,
+    time_type: Literal["grouped", "elapsed", "UTC", "multi"] = "elapsed",
+    groupby: Optional[str] = None,
     include_persistence: Optional[bool] = True,
     hue: Optional[str] = "datasource",
     xarray_plot_kwargs: Optional[dict] = {},
@@ -79,21 +81,22 @@ def plot_single_metric_timeseries(
     plt.Axes
         Axes with the plot added.
     """
-
     if include_persistence:
         da_reference, da_prediction = mlverif_stats.add_persistence_to_dataarray(
             da_reference, da_prediction
         )
+
+    if time_type != "grouped" and groupby is not None:
+        raise ValueError("'groupby' argument not allowed when 'time_type' != 'grouped'")
 
     # Stack the x and y dimensions into a single grid index if necessary
     if "x" in da_prediction.dims and "y" in da_prediction.dims:
         da_prediction = da_prediction.stack(grid_index=["x", "y"])
     if "x" in da_reference.dims and "y" in da_reference.dims:
         da_reference = da_reference.stack(grid_index=["x", "y"])
-
     # Apply statistical operation
     da_metric: xr.DataArray = stats_operation(
-        da_reference, da_prediction, reduce_dims=["grid_index"]
+        da_reference, da_prediction, reduce_dims=["grid_index"], groupby=groupby
     )
     if "start_time" in da_metric.dims:
         da_metric: xr.DataArray = mlverif_stats.mean(da_metric, dim=["start_time"])
@@ -106,7 +109,6 @@ def plot_single_metric_timeseries(
             f"DataArray does not contain a coordinate named {hue}, "
             + "please use a different coordinate as hue"
         )
-
     da_metric.plot.line(ax=axes, hue=hue, **xarray_plot_kwargs)
 
     return axes

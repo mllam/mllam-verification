@@ -11,30 +11,74 @@ from mllam_verification.plot import (
     plot_single_metric_timeseries,
 )
 
-# class TestPlotSingleMetricTimeseries:
-#     """Unit tests for the plot_single_metric_timeseries function."""
+
+@pytest.fixture(name="time_type_parameters")
+def fixture_time_type_parameters(
+    request,
+    da_reference_2d_utc,
+    da_prediction_2d_utc,
+    da_reference_2d_elapsed,
+    da_prediction_2d_elapsed,
+) -> tuple:
+    stats_operation, include_persistence, time_type, groupby, expected_num_lines = (
+        request.param
+    )
+    if time_type == "elapsed":
+        return (
+            da_reference_2d_elapsed,
+            da_prediction_2d_elapsed,
+            stats_operation,
+            include_persistence,
+            time_type,
+            groupby,
+            expected_num_lines,
+        )
+    elif time_type == "grouped":
+        return (
+            da_reference_2d_utc,
+            da_prediction_2d_utc,
+            stats_operation,
+            include_persistence,
+            time_type,
+            groupby,
+            expected_num_lines,
+        )
+    raise ValueError(
+        f"Unknown time_type: {time_type}. Cannot determine which reference array fixture to use."
+    )
 
 
 @pytest.mark.parametrize(
-    "stats_operation, include_persistence, expected_num_lines",
+    "time_type_parameters",
     [
-        (mlverif_stats.rmse, False, 1),
-        (mlverif_stats.mae, True, 2),
+        (mlverif_stats.mae, True, "elapsed", None, 2),
+        (mlverif_stats.mae, False, "grouped", "time.hour", 1),
+        (mlverif_stats.rmse, True, "elapsed", None, 2),
+        (mlverif_stats.rmse, False, "grouped", "time.hour", 1),
     ],
+    indirect=True,
 )
 def test_plot_single_metric_timeseries(
-    da_reference_2d: xr.DataArray,
-    da_prediction_2d: xr.DataArray,
-    stats_operation,
-    include_persistence,
-    expected_num_lines,
+    time_type_parameters,
 ):
     """Test plotting a single-metric-timeseries diagram with different parameters."""
+
+    (
+        da_reference,
+        da_prediction,
+        stats_operation,
+        include_persistence,
+        time_type,
+        groupby,
+        expected_num_lines,
+    ) = time_type_parameters
     ax = plot_single_metric_timeseries(
-        da_reference_2d,
-        da_prediction_2d,
+        da_reference,
+        da_prediction,
         stats_operation=stats_operation,
         include_persistence=include_persistence,
+        time_type=time_type,
+        groupby=groupby,
     )
     assert isinstance(ax, plt.Axes)
     assert len(ax.lines) == expected_num_lines
@@ -62,7 +106,7 @@ def test_plot_single_metric_gridded_map(
     )
     assert isinstance(ax, plt.Axes)
 
-    # plt.show()
+    plt.show()
 
 
 def test_plot_single_metric_hovmoller(
