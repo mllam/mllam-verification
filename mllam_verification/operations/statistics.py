@@ -43,7 +43,7 @@ def compute_pipeline_statistic(
     # Build up CF compliant cell-method attribute so that people know what
     # operations were applied
     cell_methods = []
-
+    new_datasets = []
     for ds in datasets:
         if diff_dim:
             # Only keep variables that have the diff_dim as a dimension
@@ -66,6 +66,8 @@ def compute_pipeline_statistic(
 
             # Update the cell_methods with the operation applied
             cell_methods.append(f"{diff_dim}: diff (interval: {diff_unit})")
+        new_datasets.append(ds)
+    datasets = new_datasets
 
     if stats_op:
         if isinstance(stats_op, FunctionType):
@@ -83,21 +85,38 @@ def compute_pipeline_statistic(
         else:
             raise NotImplementedError(f"stats_op {stats_op} not supported")
 
-    if groupby:
-        # Apply the groupby operation
-        ds_stat = ds_stat.groupby(groupby).mean()
-        # Update the cell_methods with the operation applied
-        cell_methods.append(f"{groupby}: groupby, mean")
-
-    # Add cell_methods attribute to all variables in addition to existing cell_methods
-    if cell_methods:
+        # Add stats_op cell_methods attribute to all variables in addition to
+        # existing cell_methods
         if isinstance(ds_stat, xr.DataArray):
             update_cell_methods(ds_stat, cell_methods)
         elif isinstance(ds_stat, xr.Dataset):
             for var in ds_stat.data_vars:
                 update_cell_methods(ds_stat[var], cell_methods)
 
-    return ds_stat
+        if groupby:
+            # Apply the groupby operation
+            ds_stat: (
+                xr.core.groupby.DataArrayGroupBy | xr.core.groupby.DataSetGroupBy
+            ) = ds_stat.groupby(groupby)
+
+        return ds_stat
+
+    # Update cell_methods attributes in case stats_op is None
+    new_datasets = []
+    for ds in datasets:
+        if groupby:
+            # Apply the groupby operation
+            ds = ds.groupby(groupby)
+            # Update the cell_methods with the operation applied
+            cell_methods.append(f"{groupby}: groupby, mean")
+
+        if isinstance(ds, xr.DataArray):
+            update_cell_methods(ds, cell_methods)
+        elif isinstance(ds, xr.Dataset):
+            for var in ds.data_vars:
+                update_cell_methods(ds[var], cell_methods)
+        new_datasets.append(ds)
+    return new_datasets
 
 
 def rmse(
@@ -133,8 +152,8 @@ def rmse(
     elif isinstance(ds_rmse, xr.Dataset):
         for _, da_var in ds_rmse.items():
             update_cell_methods(da_var, new_cell_methods)
-    else:
-        raise ValueError("ds_rmse must be an xr.Dataset or xr.DataArray")
+    # else:
+    #     raise ValueError("ds_rmse must be an xr.Dataset or xr.DataArray")
 
     return ds_rmse
 
@@ -172,8 +191,8 @@ def mae(
     elif isinstance(ds_mae, xr.Dataset):
         for _, da_var in ds_mae.items():
             update_cell_methods(da_var, new_cell_methods)
-    else:
-        raise ValueError("ds_mae must be an xr.Dataset or xr.DataArray")
+    # else:
+    #     raise ValueError("ds_mae must be an xr.Dataset or xr.DataArray")
 
     return ds_mae
 
@@ -207,6 +226,42 @@ def mean(ds: xr.Dataset | xr.DataArray, **stats_op_kwargs) -> xr.Dataset | xr.Da
         raise ValueError("ds_mean must be an xr.Dataset or xr.DataArray")
 
     return ds_mean
+
+
+def difference(
+    ds_prediction: xr.Dataset | xr.DataArray,
+    ds_reference: xr.Dataset | xr.DataArray,
+    groupby: Optional[str] = None,
+) -> xr.Dataset | xr.DataArray:
+    """Compute the root mean squared error across grid_index for all variables.
+
+    Args:
+        ds_prediction (xr.Dataset | xr.DataArray): Prediction dataset
+        ds_reference (xr.Dataset | xr.DataArray): Reference dataset
+        reduce_dims (List[str]): Dimensions to reduce over
+    Returns:
+        xr.Dataset | xr.DataArray: Dataset with the computed statistical variables
+    """
+    ds_difference = ds_reference - ds_prediction
+    diff_dims = ["x", "y"]
+    new_cell_methods = [",".join(diff_dims) + ": difference"]
+
+    # Update cell_methods attributes
+    if isinstance(ds_difference, xr.DataArray):
+        update_cell_methods(ds_difference, new_cell_methods)
+    elif isinstance(ds_difference, xr.Dataset):
+        for _, da_var in ds_difference.items():
+            update_cell_methods(da_var, new_cell_methods)
+    else:
+        raise ValueError("ds_difference must be an xr.Dataset or xr.DataArray")
+
+    if groupby is not None:
+        ds_difference = compute_pipeline_statistic(
+            datasets=[ds_difference],
+            groupby=groupby,
+        )[0]
+
+    return ds_difference
 
 
 def update_cell_methods(da: xr.DataArray, cell_methods: List[str]):
