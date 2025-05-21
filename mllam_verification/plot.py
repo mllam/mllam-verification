@@ -14,17 +14,17 @@ def plot_single_metric_timeseries(
     axes: Optional[plt.Axes] = None,
     time_axis: Literal["groupedby.{grouping}.{group}", "elapsed", "UTC"] = "elapsed",
     time_operation: Optional[Callable] = None,
-    time_op_kwargs: Optional[dict] = {},
+    time_op_kwargs: Optional[dict] = None,
     include_persistence: Optional[bool] = True,
     hue: Optional[str] = "datasource",
-    xarray_plot_kwargs: Optional[dict] = {},
+    xarray_plot_kwargs: Optional[dict] = None,
 ) -> plt.Axes:
     """Plot a single-metric-timeseries diagram for a given metric.
 
     The metric is calculated from da_reference and da_prediction, which should
     have one of the following specifications:
 
-    A) For data with non-regular grid:
+    A) For data with non-regular grid and `time_axis="elapsed"`:
 
     Dimensions: [start_time, elapsed_forecast_duration, grid_index, datasource]
     Coordinates:
@@ -37,7 +37,7 @@ def plot_single_metric_timeseries(
     - datasource:
         the source of the data, e.g. model name, persistence, etc.
 
-    B) For data with regular grid:
+    B) For data with regular grid and `time_axis="elapsed"`:
 
     Dimensions: [start_time, elapsed_forecast_duration, x, y, datasource]
     Coordinates:
@@ -52,11 +52,47 @@ def plot_single_metric_timeseries(
     - datasource:
         the source of the data, e.g. model name, persistence, etc.
 
-    The `start_time` dimension can be omitted from the dataarray. If it is present,
-    the metric will be averaged along the `start_time` dimension before plotting.
+    C) For data with non-regular grid and either `time_axis="UTC"`
+        or `time_axis="groupedby.{grouping}.{group}"`:
 
-    In case B), the `x` and `y` dimensions will be stacked into a single `grid_index`
-    dimension before plotting.
+    Dimensions: [time, grid_index, datasource]
+    Coordinates:
+    - time:
+        the time coordinate as a datetime object
+    - grid_index:
+        the index of the gridpoint
+    - datasource:
+        the source of the data, e.g. model name, persistence, etc.
+
+    D) For data with regular grid and either `time_axis="UTC"`
+        or `time_axis="groupedby.{grouping}.{group}"`:
+
+    Dimensions: [time, x, y, datasource]
+    Coordinates:
+    - time:
+        the time coordinate as a datetime object
+    - x:
+        the x coordinate of the gridpoint
+    - y:
+        the y coordinate of the gridpoint
+    - datasource:
+        the source of the data, e.g. model name, persistence, etc.
+
+
+    In case A) and B), the `start_time` dimension can be omitted from the
+    dataarray. If it is present, one has to specify a `time_operation` callable,
+    and possibly a `time_op_kwargs` dictionary with kwargs to pass to the callable,
+    to reduce the dimensions of the dataarray before plotting.
+
+    In case C) and D), if the provided `time_axis` is "groupedby.{grouping}", i.e.
+    with no ".{group}" specified, in most cases a `time_operation` callable is
+    required to reduce the xr.core.groupby.DataArrayGroupBy to an xr.DataArray.
+    Only in the case where all data arrays of the xr.core.groupby.DataArrayGroupBy
+    object have length one, this is not needed (the reduction is automatically
+    handled by the function).
+
+    In case B) and D), the `x` and `y` dimensions will be stacked into a single
+    `grid_index` dimension before plotting.
 
     Parameters
     ----------
@@ -64,18 +100,24 @@ def plot_single_metric_timeseries(
         Reference dataarray.
     da_prediction : xr.DataArray
         Prediction dataarray.
-    variable : str
-        Variable to calculate metric of.
     stats_operation : Callable, optional
         Statistics operation to calculate the metric, by default mlverif_stats.rmse
     axes : plt.Axes, optional
         Axes to plot on, by default None
+    time_axis : Literal["groupedby.{grouping}.{group}", "elapsed", "UTC"], optional
+        Time axis to use when plotting, by default "elapsed"
+    time_operation : Optional[Callable], optional
+        Time operation to apply to the time dimension of the calculate da_metric
+        dataarray before plotting, by default None
+    time_op_kwargs : Optional[dict], optional
+        kwargs to pass to the time operation, by default None
     include_persistence : bool, optional
         Whether to include persistence in the plot, by default True
+        Only possible if `time_axis="utc"`
     hue : str, optional
         Hue to plot on, by default "datasource"
     xarray_plot_kwargs : dict, optional
-        Additional arguments to pass to xarray's plot function, by default {}
+        Additional arguments to pass to xarray's plot function, by default None
 
     Returns
     -------
@@ -83,6 +125,8 @@ def plot_single_metric_timeseries(
         Axes with the plot added.
     """
     if include_persistence:
+        if time_axis != "utc":
+            raise ValueError("include_persistence is only possible if time_axis='utc'")
         da_reference, da_prediction = mlverif_stats.add_persistence_to_dataarray(
             da_reference, da_prediction
         )
@@ -90,7 +134,8 @@ def plot_single_metric_timeseries(
     time_axis_items = time_axis.split(".")
     groupby: str | None = None
     group: str | int | None = None
-    if len(time_axis_items) >= 2:
+    len_time_axis_items = len(time_axis_items)
+    if 2 <= len_time_axis_items <= 3:
         if time_axis_items[0] != "groupedby":
             raise ValueError(
                 f"Expected 'time_point' to start with 'groupedby', got {time_axis}"
@@ -101,6 +146,11 @@ def plot_single_metric_timeseries(
                 group = int(time_axis_items[-1])
             except ValueError:
                 group = time_axis_items[-1]
+    elif len_time_axis_items > 3:
+        raise ValueError(
+            "Expected 'time_axis' to be in format 'groupedby.{{grouping}}."
+            f"{{group}}', got {time_axis}"
+        )
 
     # Stack the x and y dimensions into a single grid index if necessary
     if "x" in da_prediction.dims and "y" in da_prediction.dims:
@@ -115,7 +165,9 @@ def plot_single_metric_timeseries(
         groupby=f"time.{groupby}" if groupby is not None else groupby,
     )
     if time_operation is not None:
-        da_metric = time_operation(da_metric, **time_op_kwargs)
+        da_metric = time_operation(
+            da_metric, **time_op_kwargs if time_op_kwargs is not None else {}
+        )
 
     if group is not None:
         if isinstance(da_metric, xr.DataArray):
@@ -126,10 +178,27 @@ def plot_single_metric_timeseries(
             raise ValueError(
                 "da_metric must be an xr.DataArray or xr.core.groupby.DataArrayGroupBy"
             )
+    elif isinstance(da_metric, xr.core.groupby.DataArrayGroupBy):
+        are_groups_one_dimensional = all(
+            len(da_metric[i]) == 1 for i in range(len(da_metric))
+        )
+        # If all groups are one-dimensional, apply average to turn da_metric
+        # into an xr.DataArray
+        if are_groups_one_dimensional:
+            da_metric: xr.DataArray = da_metric.mean()
+        else:
+            raise ValueError(
+                "`time_operation` must be provided to reduce the "
+                "da_metric from an xr.core.groupby.DataArrayGroupBy object to "
+                "an xr.DataArray before plotting."
+            )
 
     if axes is None:
         _, axes = plt.subplots()
-
+    if len(da_metric.dims) != 2:
+        raise ValueError(
+            "Metric DataArray must have 2 dimensions (x, y) to plot a gridded map"
+        )
     if hue not in da_metric.coords:
         raise ValueError(
             f"DataArray does not contain a coordinate named {hue}, "
@@ -149,26 +218,31 @@ def plot_single_metric_gridded_map(
     axes: Optional[plt.Axes] = None,
     time_selection: Optional[Literal["groupedby.{grouping}.{group}"] | datetime] = None,
     time_operation: Optional[Callable] = None,
+    time_op_kwargs: Optional[dict] = None,
     xarray_plot_kwargs: Optional[dict] = None,
 ):
     """Plot a single-metric-gridded-map diagram for a given metric.
 
     The metric is calculated from da_reference and da_prediction, which should
-    have the following specification:
+    have one of the following specification:
 
-    Dimensions: [start_time, x, y]
+    Dimensions: [time, x, y]
     Data variables:
-    - state [start_time, x, y]:
+    - state [time, x, y]:
     Coordinates:
-    - start_time:
+    - time:
         the analysis time as a datetime object
     - x:
         the x coordinate of the gridpoint
     - y:
         the y coordinate of the gridpoint
 
-    The `start_time` dimension can be omitted from the dataarray. If it is present,
-    the metric will be averaged along the `start_time` dimension before plotting.
+    The `time` dimension can be omitted from the dataarray. If it is present,
+    one has to either provide a `time_selection`, and/or a `time_operation`
+    callable and possibly a `time_op_kwargs` dictionary with kwargs to pass
+    to the callable, to reduce the dimensions of the dataarray before plotting.
+    This could e.g. be mlverif_stats.mean, in the case where one wants to
+    average the calculated metric over time.
 
     Parameters
     ----------
@@ -176,12 +250,19 @@ def plot_single_metric_gridded_map(
         Reference dataarray.
     da_prediction : xr.DataArray
         Prediction dataarray.
-    variable : str
-        Variable to plot.
+    stats_operation : Callable, optional
+        Statistics operation to calculate the metric, by default mlverif_stats.rmse
     axes : plt.Axes, optional
         Axes to plot on, by default None
+    time_selection : Optional[Literal["groupedby.{grouping}.{group}"] | datetime], optional
+        The time selection to plot, by default None
+    time_operation : Optional[Callable], optional
+        Time operation to apply to the time dimension of the calculate da_metric
+        dataarray before plotting, by default None
+    time_op_kwargs : Optional[dict], optional
+        kwargs to pass to the time operation, by default None
     xarray_plot_kwargs : dict, optional
-        Additional arguments to pass to xarray's plot function, by default {}
+        Additional arguments to pass to xarray's plot function, by default None
 
     Returns
     -------
@@ -203,17 +284,17 @@ def plot_single_metric_gridded_map(
     group: str | int | None = None
     if isinstance(time_selection, datetime):
         da_reference = da_reference.sel(time=time_selection)
-        da_reference = da_reference.sel(time=time_selection)
+        da_prediction = da_prediction.sel(time=time_selection)
     elif isinstance(time_selection, str):
         time_selection_items = time_selection.split(".")
         if len(time_selection_items) < 3:
             raise ValueError(
-                "Expected 'time_point' to have format "
+                "Expected 'time_selection' to have format "
                 f"'groupedby.{{grouping}}.{{group}}', got {time_selection}"
             )
         if time_selection_items[0] != "groupedby":
             raise ValueError(
-                f"Expected 'time_point' to start with 'groupedby', got {time_selection}"
+                f"Expected 'time_selection' to start with 'groupedby', got {time_selection}"
             )
         groupby = time_selection_items[1]
         try:
@@ -233,7 +314,9 @@ def plot_single_metric_gridded_map(
         groupby=f"time.{groupby}" if groupby is not None else groupby,
     )
     if time_operation is not None:
-        da_metric = time_operation(da_metric)
+        da_metric = time_operation(
+            da_metric, **time_op_kwargs if time_op_kwargs is not None else {}
+        )
 
     # Select relevant data:
     if group is not None:
@@ -248,20 +331,19 @@ def plot_single_metric_gridded_map(
 
     if axes is None:
         _, axes = plt.subplots()
-
+    # __import__("ipdb").set_trace()
     if "time" in da_metric.dims and da_metric.sizes["time"] == 1:
         da_metric = da_metric.isel(time=0)
     if "time" in da_metric.dims and da_metric.sizes["time"] >= 1:
         if groupby is not None:
             raise ValueError(
-                "'time_operation' must be provided to reduce dimensionality of "
-                "grouped dataarray da_metric before plotting."
+                "`time_operation` must be provided to reduce dimensionality of "
+                "the dataarray `da_metric` before plotting."
             )
         raise ValueError(
             "Please select a specific time to plot with 'time_selection=<datetime>'"
         )
     if len(da_metric.dims) != 2:
-
         raise ValueError(
             "Metric DataArray must have 2 dimensions (x, y) to plot a gridded map"
         )
@@ -320,7 +402,7 @@ def plot_single_metric_hovmoller(
     axes : plt.Axes, optional
         Axes to plot on, by default None
     xarray_plot_kwargs : dict, optional
-        Additional arguments to pass to xarray's plot function, by default {}
+        Additional arguments to pass to xarray's plot function, by default None
 
     Returns
     -------

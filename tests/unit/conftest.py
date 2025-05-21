@@ -22,18 +22,23 @@ NFORECASTS = 10
 @pytest.fixture(name="start_times", scope="session")
 def fixture_start_times():
     """Fixture that returns a numpy array representing start_times."""
+    # __import__("ipdb").set_trace()
     return np.array(
         [
             np.datetime64("today") + np.timedelta64(i * 2 * FORECAST_LENGTH, "h")
             for i in range(NFORECASTS)
-        ]
+        ],
+        dtype="datetime64[ns]",
     )
 
 
 @pytest.fixture(name="elapsed_forecast_duration", scope="session")
 def fixture_elapsed_forecast_duration():
     """Fixture that returns a numpy array representing elapsed_forecast_duration steps."""
-    return np.array([np.timedelta64(i, "h") for i in range(1, FORECAST_LENGTH)])
+    return np.array(
+        [np.timedelta64(i, "h") for i in range(1, FORECAST_LENGTH)],
+        dtype="timedelta64[ns]",
+    )
 
 
 @pytest.fixture(name="reference_times", scope="session")
@@ -53,7 +58,12 @@ def fixture_reference_times(start_times: NDArray, elapsed_forecast_duration: NDA
 @pytest.fixture(name="unique_reference_times", scope="session")
 def fixture_unique_reference_times(reference_times: NDArray) -> NDArray:
     """Fixture that returns a numpy array of unique reference times."""
-    return np.arange(reference_times.min(), reference_times.max() + 1)
+    return np.arange(
+        reference_times.min(),
+        reference_times.max() + 1,
+        step=np.timedelta64(1, "h"),
+        dtype="datetime64[ns]",
+    )
 
 
 @pytest.fixture(name="meshgrid", scope="session")

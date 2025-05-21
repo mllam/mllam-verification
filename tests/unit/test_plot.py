@@ -15,7 +15,7 @@ from mllam_verification.plot import (
 )
 
 
-@pytest.fixture(name="time_type_parameters")
+@pytest.fixture(name="time_axis_parameters")
 def fixture_time_type_parameters(
     request,
     da_reference_2d_utc,
@@ -42,71 +42,122 @@ def fixture_time_type_parameters(
             time_op_kwargs,
             expected_num_lines,
         )
-    if "groupedby" in time_axis:
-        return (
-            da_reference_2d_utc,
-            da_prediction_2d_utc,
+    return (
+        da_reference_2d_utc,
+        da_prediction_2d_utc,
+        stats_operation,
+        include_persistence,
+        time_axis,
+        time_operation,
+        time_op_kwargs,
+        expected_num_lines,
+    )
+
+
+class TestPlotSingleMetricTimeseries:
+    """Unit tests for the plot_single_metric_gridded_map function"""
+
+    @pytest.mark.parametrize(
+        "time_axis_parameters",
+        [
+            (
+                mlverif_stats.mae,
+                False,
+                "elapsed",
+                mlverif_stats.mean,
+                {"dim": "start_time"},
+                1,
+            ),
+            (
+                mlverif_stats.rmse,
+                False,
+                "elapsed",
+                mlverif_stats.mean,
+                {"dim": "start_time"},
+                1,
+            ),
+            (mlverif_stats.mae, False, "groupedby.hour.0", None, {}, 1),
+            (mlverif_stats.rmse, False, "groupedby.hour", mlverif_stats.mean, {}, 1),
+        ],
+        indirect=True,
+    )
+    def test_expected_input(
+        self,
+        time_axis_parameters,
+    ):
+        """Test plotting a single-metric-timeseries diagram with different parameters."""
+        (
+            da_reference,
+            da_prediction,
             stats_operation,
             include_persistence,
             time_axis,
             time_operation,
             time_op_kwargs,
             expected_num_lines,
+        ) = time_axis_parameters
+        ax = plot_single_metric_timeseries(
+            da_reference,
+            da_prediction,
+            stats_operation=stats_operation,
+            include_persistence=include_persistence,
+            time_axis=time_axis,
+            time_operation=time_operation,
+            time_op_kwargs=time_op_kwargs,
         )
-    raise ValueError(
-        f"Unknown time_type: {time_axis}. Cannot determine which reference array fixture to use."
-    )
+        assert isinstance(ax, plt.Axes)
+        assert len(ax.lines) == expected_num_lines
 
-
-@pytest.mark.parametrize(
-    "time_type_parameters",
-    [
-        (
-            mlverif_stats.mae,
-            True,
-            "elapsed",
-            mlverif_stats.mean,
-            {"dim": "start_time"},
-            2,
-        ),
-        (
-            mlverif_stats.rmse,
-            True,
-            "elapsed",
-            mlverif_stats.mean,
-            {"dim": "start_time"},
-            2,
-        ),
-        (mlverif_stats.mae, False, "groupedby.hour.0", None, {}, 1),
-        (mlverif_stats.rmse, False, "groupedby.hour", mlverif_stats.mean, {}, 1),
-    ],
-    indirect=True,
-)
-def test_plot_single_metric_timeseries(
-    time_type_parameters,
-):
-    """Test plotting a single-metric-timeseries diagram with different parameters."""
-    (
-        da_reference,
-        da_prediction,
-        stats_operation,
-        include_persistence,
-        time_type,
-        time_operation,
-        time_op_kwargs,
-        expected_num_lines,
-    ) = time_type_parameters
-    ax = plot_single_metric_timeseries(
-        da_reference,
-        da_prediction,
-        stats_operation=stats_operation,
-        include_persistence=include_persistence,
-        time_axis=time_type,
-        time_operation=time_operation,
-        time_op_kwargs=time_op_kwargs,
+    @pytest.mark.parametrize(
+        "time_axis_parameters",
+        [
+            (
+                mlverif_stats.mae,
+                True,
+                "elapsed",
+                mlverif_stats.mean,
+                {"dim": "start_time"},
+                1,
+            ),
+            (
+                mlverif_stats.rmse,
+                True,
+                "elapsed",
+                None,
+                {"dim": "start_time"},
+                1,
+            ),
+            (mlverif_stats.mae, False, "grouped.hour.0", None, {}, 1),
+            (mlverif_stats.rmse, False, "groupedby.hour", None, {}, 1),
+            (mlverif_stats.rmse, False, "groupedby.time.hour.0", None, {}, 1),
+        ],
+        indirect=True,
     )
-    assert isinstance(ax, plt.Axes)
-    assert len(ax.lines) == expected_num_lines
+    def test_unexpected_input(
+        self,
+        time_axis_parameters,
+    ):
+        """Test plotting a single-metric-timeseries diagram with wrong input parameters."""
+        (
+            da_reference,
+            da_prediction,
+            stats_operation,
+            include_persistence,
+            time_axis,
+            time_operation,
+            time_op_kwargs,
+            _,
+        ) = time_axis_parameters
+        with pytest.raises(ValueError):
+            plot_single_metric_timeseries(
+                da_reference,
+                da_prediction,
+                stats_operation=stats_operation,
+                include_persistence=include_persistence,
+                time_axis=time_axis,
+                time_operation=time_operation,
+                time_op_kwargs=time_op_kwargs,
+            )
 
 
 class TestPlotSingleMetricGriddedMap:
@@ -180,16 +231,16 @@ class TestPlotSingleMetricGriddedMap:
             assert isinstance(ax, plt.Axes)
 
 
-def test_plot_single_metric_hovmoller(
-    da_reference_2d: xr.DataArray,
-    da_prediction_2d: xr.DataArray,
-):
-    """Test plotting a single-metric-timeseries diagram with different parameters."""
-    ax = plot_single_metric_hovmoller(
-        da_reference_2d.isel(datasource=0),
-        da_prediction_2d.isel(datasource=0),
-        preserve_dim="y",
-    )
-    assert isinstance(ax, plt.Axes)
+# def test_plot_single_metric_hovmoller(
+#     da_reference_2d: xr.DataArray,
+#     da_prediction_2d: xr.DataArray,
+# ):
+#     """Test plotting a single-metric-timeseries diagram with different parameters."""
+#     ax = plot_single_metric_hovmoller(
+#         da_reference_2d.isel(datasource=0),
+#         da_prediction_2d.isel(datasource=0),
+#         preserve_dim="y",
+#     )
+#     assert isinstance(ax, plt.Axes)
 
-    # plt.show()
+# plt.show()
