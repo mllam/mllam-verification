@@ -22,10 +22,9 @@ NFORECASTS = 10
 @pytest.fixture(name="start_times", scope="session")
 def fixture_start_times():
     """Fixture that returns a numpy array representing start_times."""
-    # __import__("ipdb").set_trace()
     return np.array(
         [
-            np.datetime64("today") + np.timedelta64(i * 2 * FORECAST_LENGTH, "h")
+            np.datetime64("today", "h") + np.timedelta64(i * 2 * FORECAST_LENGTH, "h")
             for i in range(NFORECASTS)
         ],
         dtype="datetime64[ns]",

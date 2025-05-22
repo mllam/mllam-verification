@@ -222,25 +222,107 @@ class TestPlotSingleMetricGriddedMap:
             exception (Exception): The expected exception
         """
         with pytest.raises(exception):
-            ax = plot_single_metric_gridded_map(
+            plot_single_metric_gridded_map(
                 da_reference_2d_utc.isel(datasource=0).drop_vars("datasource"),
                 da_prediction_2d_utc.isel(datasource=0).drop_vars("datasource"),
                 time_selection=time_selection,
                 time_operation=time_operation,
             )
-            assert isinstance(ax, plt.Axes)
 
 
-# def test_plot_single_metric_hovmoller(
-#     da_reference_2d: xr.DataArray,
-#     da_prediction_2d: xr.DataArray,
-# ):
-#     """Test plotting a single-metric-timeseries diagram with different parameters."""
-#     ax = plot_single_metric_hovmoller(
-#         da_reference_2d.isel(datasource=0),
-#         da_prediction_2d.isel(datasource=0),
-#         preserve_dim="y",
-#     )
-#     assert isinstance(ax, plt.Axes)
+class TestPlotSingleMetricHovmoller:
+    """Unit tests for the plot_single_metric_hovmoller function"""
 
-# plt.show()
+    @pytest.mark.parametrize(
+        "time_axis_parameters",
+        [
+            (
+                mlverif_stats.mae,
+                None,
+                "elapsed",
+                mlverif_stats.mean,
+                {"dim": "start_time"},
+                None,
+            ),
+            (mlverif_stats.mae, None, "UTC", None, {}, None),
+            (mlverif_stats.mae, None, "groupedby.hour", mlverif_stats.mean, {}, None),
+            (mlverif_stats.rmse, None, "groupedby.hour.0", None, {}, None),
+        ],
+        indirect=True,
+    )
+    def test_expected_input(
+        self,
+        time_axis_parameters,
+    ):
+        """Test plotting a single-metric-timeseries diagram with different parameters."""
+
+        (
+            da_reference,
+            da_prediction,
+            stats_operation,
+            _,
+            time_axis,
+            time_operation,
+            time_op_kwargs,
+            _,
+        ) = time_axis_parameters
+        ax = plot_single_metric_hovmoller(
+            da_reference.isel(datasource=0),
+            da_prediction.isel(datasource=0),
+            preserve_dim="y",
+            stats_operation=stats_operation,
+            time_axis=time_axis,
+            time_operation=time_operation,
+            time_op_kwargs=time_op_kwargs,
+        )
+        assert isinstance(ax, plt.Axes)
+
+    @pytest.mark.parametrize(
+        "time_axis_parameters",
+        [
+            (
+                mlverif_stats.mae,
+                None,
+                "elapsed",
+                None,
+                {},
+                None,
+            ),
+            (mlverif_stats.mae, None, "groupedby.hour", None, {}, None),
+            (
+                mlverif_stats.rmse,
+                None,
+                "groupedby.hour.0",
+                mlverif_stats.mean,
+                {},
+                None,
+            ),
+        ],
+        indirect=True,
+    )
+    def test_unexpected_input(
+        self,
+        time_axis_parameters,
+    ):
+        """Test plotting a single-metric-timeseries diagram with different parameters."""
+
+        (
+            da_reference,
+            da_prediction,
+            stats_operation,
+            _,
+            time_axis,
+            time_operation,
+            time_op_kwargs,
+            _,
+        ) = time_axis_parameters
+        with pytest.raises(ValueError):
+            plot_single_metric_hovmoller(
+                da_reference.isel(datasource=0),
+                da_prediction.isel(datasource=0),
+                preserve_dim="y",
+                stats_operation=stats_operation,
+                time_axis=time_axis,
+                time_operation=time_operation,
+                time_op_kwargs=time_op_kwargs,
+            )

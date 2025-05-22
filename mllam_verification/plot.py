@@ -130,6 +130,10 @@ def plot_single_metric_timeseries(
         da_reference, da_prediction = mlverif_stats.add_persistence_to_dataarray(
             da_reference, da_prediction
         )
+    # Determine what the time dimension to preserve is called
+    time_axis_name = "time"
+    if time_axis == "elapsed":
+        time_axis_name = "elapsed_forecast_duration"
 
     time_axis_items = time_axis.split(".")
     groupby: str | None = None
@@ -204,9 +208,30 @@ def plot_single_metric_timeseries(
             f"DataArray does not contain a coordinate named {hue}, "
             + "please use a different coordinate as hue"
         )
+
+    # To be able to plot "elapsed" time axis together with `preserve_dim`
+    # dimension, we need to convert time axis to a format that supports
+    # DTypePromotion to that of `preserve_dim`
+    if time_axis == "elapsed":
+        time_dtype = da_metric[time_axis_name].dtype
+        da_metric = da_metric.assign_coords(
+            {
+                time_axis_name: da_metric[time_axis_name].astype(int),
+            }
+        )
+
     da_metric.plot.line(
         ax=axes, hue=hue, **xarray_plot_kwargs if xarray_plot_kwargs is not None else {}
     )
+
+    # Set the x-axis ticks to match original time dtype
+    if time_axis == "elapsed":
+        axes.set_xticks(
+            da_metric[time_axis_name].values,
+            da_metric[time_axis_name].values.astype(time_dtype).astype(str),
+            rotation=45,
+            ha="right",
+        )
 
     return axes
 
@@ -331,7 +356,7 @@ def plot_single_metric_gridded_map(
 
     if axes is None:
         _, axes = plt.subplots()
-    # __import__("ipdb").set_trace()
+
     if "time" in da_metric.dims and da_metric.sizes["time"] == 1:
         da_metric = da_metric.isel(time=0)
     if "time" in da_metric.dims and da_metric.sizes["time"] >= 1:
@@ -363,6 +388,9 @@ def plot_single_metric_hovmoller(
     preserve_dim: str,
     stats_operation: Callable = mlverif_stats.rmse,
     axes: Optional[plt.Axes] = None,
+    time_axis: Literal["groupedby.{grouping}.{group}", "elapsed", "UTC"] = "elapsed",
+    time_operation: Optional[Callable] = None,
+    time_op_kwargs: Optional[dict] = None,
     xarray_plot_kwargs: Optional[dict] = None,
 ):
     """Plot a single-metric-hovmoller diagram for a given metric.
@@ -372,6 +400,8 @@ def plot_single_metric_hovmoller(
 
     The metric is calculated from da_reference and da_prediction, which should
     have one of the following specifications:
+
+    A) For `time_axis="elapsed"`:
 
     Dimensions: [start_time, elapsed_forecast_duration, `spatial_dim`, ...]
     Coordinates:
@@ -384,8 +414,28 @@ def plot_single_metric_hovmoller(
     - ...:
         Any other dimensions, which will be reduced along
 
-    The `start_time` dimension can be omitted from the dataarray. If it is present,
-    the metric will be averaged along the `start_time` dimension before plotting.
+    B) For `time_axis="UTC"` or `time_axis="groupedby.{grouping}.{group}"`:
+
+    Dimensions: [time, `spatial_dim`, ...]
+    Coordinates:
+    - time:
+        the time coordinate as a datetime object
+    - `spatial_dim`:
+        the coordinate of the spatial dimension to be plotted up the y-axis
+    - ...:
+        Any other dimensions, which will be reduced along
+
+    In case A), the `start_time` dimension can be omitted from the dataarray.
+    If it is present, one has to specify a `time_operation` callable,
+    and possibly a `time_op_kwargs` dictionary with kwargs to pass to the callable,
+    to reduce the dimensions of the dataarray before plotting.
+
+    In case B), if the provided `time_axis` is "groupedby.{grouping}", i.e.
+    with no ".{group}" specified, in most cases a `time_operation` callable is
+    required to reduce the xr.core.groupby.DataArrayGroupBy to an xr.DataArray.
+    Only in the case where all data arrays of the xr.core.groupby.DataArrayGroupBy
+    object have length two, this is not needed (the reduction is automatically
+    handled by the function).
 
     Parameters
     ----------
@@ -393,14 +443,19 @@ def plot_single_metric_hovmoller(
         Reference dataarray.
     da_prediction : xr.DataArray
         Prediction dataarray.
-    variable : str
-        Variable to plot.
     preserve_dim : str
         Dimension to preserve along the y-axis.
     stats_operation : Callable, optional
         Statistics operation to calculate the metric, by default mlverif_stats.rmse
     axes : plt.Axes, optional
         Axes to plot on, by default None
+    time_axis : Literal["groupedby.{grouping}.{group}", "elapsed", "UTC"], optional
+        Time axis to use when plotting, by default "elapsed"
+    time_operation : Optional[Callable], optional
+        Time operation to apply to the time dimension of the calculate da_metric
+        dataarray before plotting, by default None
+    time_op_kwargs : Optional[dict], optional
+        kwargs to pass to the time operation, by default None
     xarray_plot_kwargs : dict, optional
         Additional arguments to pass to xarray's plot function, by default None
 
@@ -416,31 +471,110 @@ def plot_single_metric_hovmoller(
             "Prediction and reference dataarrays must have `preserve_dim`"
             " dimension to plot hövmöller diagram."
         )
+    # Determine what the time dimension to preserve is called
+    if time_axis == "elapsed":
+        time_axis_name = "elapsed_forecast_duration"
+        time_dim_names = ["start_time", "elapsed_forecast_duration"]
+    else:
+        time_axis_name = "time"
+        time_dim_names = ["time"]
+
+    time_axis_items = time_axis.split(".")
+    groupby: str | None = None
+    group: str | int | None = None
+    len_time_axis_items = len(time_axis_items)
+    if 2 <= len_time_axis_items <= 3:
+        if time_axis_items[0] != "groupedby":
+            raise ValueError(
+                f"Expected 'time_point' to start with 'groupedby', got {time_axis}"
+            )
+        groupby = time_axis_items[1]
+        if len(time_axis_items) > 2:
+            try:
+                group = int(time_axis_items[-1])
+            except ValueError:
+                group = time_axis_items[-1]
+        else:
+            time_axis_name = groupby
+    elif len_time_axis_items > 3:
+        raise ValueError(
+            "Expected 'time_axis' to be in format 'groupedby.{{grouping}}."
+            f"{{group}}', got {time_axis}"
+        )
 
     # Apply statistical operation
-    ds_metric: xr.DataArray = stats_operation(
+    da_metric: xr.DataArray | xr.core.groupby.DataArrayGroupBy = stats_operation(
         da_reference,
         da_prediction,
-        preserve_dims=[preserve_dim, "start_time", "elapsed_forecast_duration"],
+        groupby=f"time.{groupby}" if groupby is not None else groupby,
+        preserve_dims=[
+            preserve_dim,
+            *time_dim_names,
+        ],
     )
-    if "start_time" in ds_metric.dims:
-        ds_metric: xr.DataArray = mlverif_stats.mean(ds_metric, dim=["start_time"])
+    if time_operation is not None:
+        da_metric = time_operation(
+            da_metric, **time_op_kwargs if time_op_kwargs is not None else {}
+        )
+
+    if group is not None:
+        if isinstance(da_metric, xr.DataArray):
+            da_metric: xr.DataArray = da_metric.sel({groupby: group})
+        elif isinstance(da_metric, xr.core.groupby.DataArrayGroupBy):
+            da_metric: xr.DataArray = da_metric[group]
+        else:
+            raise ValueError(
+                "da_metric must be an xr.DataArray or xr.core.groupby.DataArrayGroupBy"
+            )
+    elif isinstance(da_metric, xr.core.groupby.DataArrayGroupBy):
+        are_groups_two_dimensional = all(
+            len(da_metric[i]) == 2 for i in range(len(da_metric))
+        )
+        # If all groups are one-dimensional, apply average to turn da_metric
+        # into an xr.DataArray
+        if are_groups_two_dimensional:
+            da_metric: xr.DataArray = da_metric.mean()
+        else:
+            raise ValueError(
+                "`time_operation` must be provided to reduce the "
+                "da_metric from an xr.core.groupby.DataArrayGroupBy object to "
+                "an xr.DataArray before plotting."
+            )
 
     if axes is None:
         _, axes = plt.subplots()
 
     # Check if dimensions are present
-    if len(ds_metric.dims) != 2:
+    if len(da_metric.dims) != 2:
         raise ValueError(
-            "Metric dataarray must have 2 dimensions (`preserve_dim`, "
-            "elapsed_forecast_duration) to plot a gridded map"
+            f"Metric dataarray must have 2 dimensions ({time_axis_name}, "
+            f"{preserve_dim}) to plot the gridded map. Got {da_metric.dims}."
         )
 
-    ds_metric.plot.pcolormesh(
-        x="elapsed_forecast_duration",
+    # To be able to plot "elapsed" time axis together with `preserve_dim`
+    # dimension, we need to convert time axis to a format that supports
+    # DTypePromotion to that of `preserve_dim`
+    if time_axis == "elapsed":
+        time_dtype = da_metric[time_axis_name].dtype
+        da_metric = da_metric.assign_coords(
+            {
+                time_axis_name: da_metric[time_axis_name].astype(int),
+            }
+        )
+
+    da_metric.plot.pcolormesh(
+        x=time_axis_name,
         y=preserve_dim,
         ax=axes,
         **xarray_plot_kwargs if xarray_plot_kwargs is not None else {},
     )
+    # Set the x-axis ticks to match original time dtype
+    if time_axis == "elapsed":
+        axes.set_xticks(
+            da_metric[time_axis_name].values,
+            da_metric[time_axis_name].values.astype(time_dtype).astype(str),
+            rotation=45,
+            ha="right",
+        )
 
     return axes
