@@ -373,8 +373,8 @@ def plot_single_metric_gridded_map(
             "Metric DataArray must have 2 dimensions (x, y) to plot a gridded map"
         )
     da_metric.plot.pcolormesh(
-        x="x",
-        y="y",
+        x="lon",
+        y="lat",
         ax=axes,
         **xarray_plot_kwargs if xarray_plot_kwargs is not None else {},
     )

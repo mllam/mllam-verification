@@ -5,18 +5,23 @@ Verification of neural-lam, e.g. performance of the model relative to the truth,
 
 - Every plot function should have ax = None as input argument. If no axes is provided, a new figure with appropriate settings/features (e.g. coastlines for maps) should be created. Otherwise, the plot should be added to the provided axes on top of the existing plot with a zorder = 10*n, where n is an integer. One can also specify zorder as input argument to the plot function to place the plot at a specific place in the plot hierarchy.
 - Every plot function should have an include_persistence input argument, that defaults to True if it is possible to add persistence for the given plot type, and False if not. If include_persistence = True , but the plot doesn't support plotting the persistence an error should be raised.
+- If needed, the persistence should be added beforehand to the dataset for which the statistics are to be calculated, such that one can call the calculate_pipeline_statistics function just with one dataset.
 - Every plot function should take the metric to compute and plot as input argument.
 - The functions shall be callable from JupyterNotebook/Python script and the CLI.
-- The top-level plot functions should be named according to the plot they produce. They should not directly contain the logic to actually compute the metrics, but instead call other comput functions to do that.
-- The package shall support specifying plot settings, output path for saving plots, etc. in a config file
+- The top-level plot functions should be named according to the plot they produce. They should not directly contain the logic to actually compute the metrics, but instead call other compute functions to do that.
+
+- Placer validering af dimensioner/coordinater efter metric beregningen da denne beregning skal laves layzily i Dask og derfor sker beregningen ikke før data skal bruges i plottet.
+- Giv plot funktionen x,y arg names der indikerer hvad der skal bruges som x og y
+- Giv plot funktionen dataarrays hvor variablerne allerede er valgt ud -> fjern variabel input argumentet.
+- Lav én compute pipeline statistics function som tager "metric" som argument og kan kalde metrik beregningen fra eksterne moduler. Tag udgangspunkt i den eksisterende compute_pipeline_statistics function i mllam-verification-old. 
 
 ### Example on python functions
 
-In [mllam_verification.plot](https://github.com/mllam/mllam-verification/pull/2/files#diff-15c7e6b996e82bcc0f02abdd0aa702dcc8d0afae552cec7872cbc1005081c896) there is an example on a plot function that plots the single-metric-timeseries plot
+In [mllam_verification.plot] there is an example on a plot function that plots the single-metric-timeseries plot
 
-This plot function will call a calculate_{metric} function (located in the metrics.py module), that could look like (for metric=rmse) [this](https://github.com/mllam/mllam-verification/pull/2/files#diff-83955882ad971de54d93c75790537d89f01aaea7969c6e31109456d248aa1a20) with a persistence calculation function as shown later in that file.
+This plot function will first add persistence to the dataset for which one should calculate the statistics (only if needed), and then call a calculate_pipeline_statistics function.
 
-These two functions will make use of a RMSE function located in the [statistics.py](https://github.com/mllam/mllam-verification/pull/2/files#diff-938dea8677e64061150529b5d1ca7753c260b27568d2d7be0a911edefe3fbd6a) module. The statistics.py functions will call functions from the `scores` python package where possible and add relevant cf compliant cell_methods.
+This latter function will make use of statistics functions located in statistics.py. The statistics.py functions will be able to call statistics function from external packages, e.g. the `scores` python package, by simply specifying the package as an input argument, and add relevant cf compliant cell_methods.
 
 ## Python API
 The mllam_verification package should be structured according to this directory structure. As an example, the above plot function plot_single_metric_timeseries will be located in mllam_verification/plot.py .
@@ -26,16 +31,12 @@ The mllam_verification package should be structured according to this directory 
 ├── mllam_verification
 │   ├── operations
 │   │   ├── __init__.py
-│   │   ├── dataset_manipulation.py     # Contains functions for dataset manipulation e.g. aligning shapes etc.
 │   │   ├── loading.py                  # Contains functions for loading data
 │   │   ├── saving.py                   # Contains functions for saving data and plots
-│   │   ├── plot_utils.py               # Contains utility functions for plotting e.g. color maps, figure instanciation and formating etc.
-│   │   ├── statistics.py               # Contains functions for computing statistics e.g. mean, std, etc.
-│   │   └── metrics.py                  # Contains functions for computing metrics e.g. mean squared error, etc.
+│   │   └── statistics.py               # Contains functions for computing statistics e.g. mean, std, etc.
 │   ├── __init__.py
 │   ├── __main__.py                     # Entry point of the package
 │   ├── argument_parser.py              # Contains CLI argument parser
-│   ├── config.py                       # Contains config file parser
 │   └── plot.py                         # Main script for producing plots
 └── tests
     ├── conftest.py
@@ -47,14 +48,7 @@ The mllam_verification package should be structured according to this directory 
         └── ...
 ├── pdm.lock
 ├── pyproject.toml
-├── example.yaml                        # Example config file
 └── README.md
-```
-
-## CLI API
-The package shall be callable with the following arguments
-```bash
-mllam_verification -r/--reference /path/to/ds_reference -p/--prediction /path/to/ds_prediction -m/--metric <metric_name> --var <variable-name(s)> --plot <name-of-plot(s)> --save-plots --save-dir /path/to/output
 ```
 
 ## Supported plots
