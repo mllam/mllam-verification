@@ -140,6 +140,7 @@ def rmse(
         groupby=groupby,
         stats_op_kwargs=stats_op_kwargs,
     )
+    ds_rmse.name = ds_prediction.name
 
     # Get difference in dimensions betwee input datasets and ds_rmse.
     # Input dataset are assumed to have the same dimensions.

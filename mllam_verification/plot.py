@@ -15,7 +15,7 @@ def plot_single_metric_timeseries(
     time_axis: Literal["groupedby.{grouping}.{group}", "elapsed", "UTC"] = "elapsed",
     time_operation: Optional[Callable] = None,
     time_op_kwargs: Optional[dict] = None,
-    include_persistence: Optional[bool] = True,
+    include_persistence: Optional[bool] = False,
     hue: Optional[str] = "datasource",
     xarray_plot_kwargs: Optional[dict] = None,
 ) -> plt.Axes:
@@ -196,12 +196,12 @@ def plot_single_metric_timeseries(
                 "da_metric from an xr.core.groupby.DataArrayGroupBy object to "
                 "an xr.DataArray before plotting."
             )
-
     if axes is None:
         _, axes = plt.subplots()
-    if len(da_metric.dims) != 2:
+    num_expected_dims = 1 + (hue in da_metric.dims)
+    if len(da_metric.dims) != num_expected_dims:
         raise ValueError(
-            "Metric DataArray must have 2 dimensions (x, y) to plot a gridded map"
+            f"Metric DataArray must have {num_expected_dims} dimension to plot a timeseries with hue {hue}. da_metric, however, has dims {da_metric.dims}"
         )
     if hue not in da_metric.coords:
         raise ValueError(
@@ -219,9 +219,11 @@ def plot_single_metric_timeseries(
                 time_axis_name: da_metric[time_axis_name].astype(int),
             }
         )
-
     da_metric.plot.line(
-        ax=axes, hue=hue, **xarray_plot_kwargs if xarray_plot_kwargs is not None else {}
+        ax=axes,
+        hue=hue,
+        add_legend=da_metric[hue].count().values != 1,
+        **xarray_plot_kwargs if xarray_plot_kwargs is not None else {},
     )
 
     # Set the x-axis ticks to match original time dtype
