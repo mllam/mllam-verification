@@ -219,10 +219,12 @@ def plot_single_metric_timeseries(
                 time_axis_name: da_metric[time_axis_name].astype(int),
             }
         )
+    if xarray_plot_kwargs and "add_legend" not in xarray_plot_kwargs:
+        xarray_plot_kwargs["add_legend"] = da_metric[hue].count().values != 1
+
     da_metric.plot.line(
         ax=axes,
         hue=hue,
-        add_legend=da_metric[hue].count().values != 1,
         **xarray_plot_kwargs if xarray_plot_kwargs is not None else {},
     )
 
