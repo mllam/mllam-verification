@@ -10,6 +10,7 @@
     "matplotlib>=3.9.4",
     "scores>=1.2.0",
     "dask[distributed]>=2024.8.0",
+    "pydantic>=2.11.5",
 ]
   requires-python = ">=3.9"
   readme = "README.md"

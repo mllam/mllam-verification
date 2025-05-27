@@ -1,7 +1,7 @@
 """Unit tests for the plot module."""
 
 from datetime import datetime
-from typing import Callable, Literal, Optional
+from typing import Callable, Literal, Optional, Tuple
 
 import matplotlib.pyplot as plt
 import pytest
@@ -22,7 +22,8 @@ def fixture_time_type_parameters(
     da_prediction_2d_utc,
     da_reference_2d_elapsed,
     da_prediction_2d_elapsed,
-) -> tuple:
+) -> Tuple[xr.DataArray, xr.DataArray, Callable, bool, str, Callable, dict, int]:
+    """Return a tuple of parameters for the test plot functions."""
     (
         stats_operation,
         include_persistence,
@@ -85,7 +86,7 @@ class TestPlotSingleMetricTimeseries:
         self,
         time_axis_parameters,
     ):
-        """Test plotting a single-metric-timeseries diagram with different parameters."""
+        """Test with expected input arguments."""
         (
             da_reference,
             da_prediction,
@@ -137,7 +138,7 @@ class TestPlotSingleMetricTimeseries:
         self,
         time_axis_parameters,
     ):
-        """Test plotting a single-metric-timeseries diagram with wrong input parameters."""
+        """Test with wrong input arguments."""
         (
             da_reference,
             da_prediction,
@@ -178,7 +179,7 @@ class TestPlotSingleMetricGriddedMap:
         time_selection: Optional[Literal["groupedby.{grouping}.{group}"] | datetime],
         time_operation: Optional[Callable],
     ):
-        """Test plotting a single-metric-timeseries diagram with different parameters."""
+        """Test with expected input arguments."""
         # When time selectin is None, we assume that the user has selected the time
         # to plot themselves. This is simulated by selecting the first time step.
         if time_selection is None:
@@ -210,7 +211,7 @@ class TestPlotSingleMetricGriddedMap:
         time_operation: Optional[Callable],
         exception: Exception,
     ):
-        """Test plotting a single-metric-gridded-map diagram with wrong input parameters.
+        """Test with wrong input arguments.
 
         Args:
             da_reference_2d_utc (xr.DataArray): The reference dataset
@@ -254,7 +255,7 @@ class TestPlotSingleMetricHovmoller:
         self,
         time_axis_parameters,
     ):
-        """Test plotting a single-metric-timeseries diagram with different parameters."""
+        """Test with expected input arguments."""
 
         (
             da_reference,
@@ -304,7 +305,7 @@ class TestPlotSingleMetricHovmoller:
         self,
         time_axis_parameters,
     ):
-        """Test plotting a single-metric-timeseries diagram with different parameters."""
+        """Test with wrong input arguments."""
 
         (
             da_reference,

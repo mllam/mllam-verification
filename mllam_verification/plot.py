@@ -1,18 +1,34 @@
+"""Plot module."""
+
 from datetime import datetime
-from typing import Callable, Literal, Optional
+from typing import Annotated, Callable, Literal, Optional
 
 import matplotlib.pyplot as plt
 import xarray as xr
+from pydantic import BeforeValidator, validate_call
 
 import mllam_verification.operations.statistics as mlverif_stats
+from mllam_verification.array_handling import reduce_groups, select_group
+from mllam_verification.validation import (
+    check_dims_for_gridded_map,
+    validate_time_axis,
+    validate_time_selection,
+)
 
 
+@validate_call(config={"arbitrary_types_allowed": True})
 def plot_single_metric_timeseries(  # noqa: C901
     da_reference: xr.DataArray,
     da_prediction: xr.DataArray,
     stats_operation: Callable = mlverif_stats.rmse,
     axes: Optional[plt.Axes] = None,
-    time_axis: Literal["groupedby.{grouping}.{group}", "elapsed", "UTC"] = "elapsed",
+    time_axis: (
+        Literal["elapsed", "UTC"]
+        | Annotated[
+            str,
+            BeforeValidator(validate_time_axis),
+        ]
+    ) = "elapsed",
     time_operation: Optional[Callable] = None,
     time_op_kwargs: Optional[dict] = None,
     include_persistence: Optional[bool] = False,
@@ -105,7 +121,8 @@ def plot_single_metric_timeseries(  # noqa: C901
     axes : plt.Axes, optional
         Axes to plot on, by default None
     time_axis : Literal["groupedby.{grouping}.{group}", "elapsed", "UTC"], optional
-        Time axis to use when plotting, by default "elapsed"
+        Time axis to use when plotting, by default "elapsed".
+        Only groupings along time dimension are supported.
     time_operation : Optional[Callable], optional
         Time operation to apply to the time dimension of the calculate da_metric
         dataarray before plotting, by default None
@@ -130,38 +147,27 @@ def plot_single_metric_timeseries(  # noqa: C901
         da_reference, da_prediction = mlverif_stats.add_persistence_to_dataarray(
             da_reference, da_prediction
         )
+
     # Determine what the time dimension to preserve is called
     time_axis_name = "time"
     if time_axis == "elapsed":
         time_axis_name = "elapsed_forecast_duration"
 
-    time_axis_items = time_axis.split(".")
-    groupby: str | None = None
-    group: str | int | None = None
-    len_time_axis_items = len(time_axis_items)
-    if 2 <= len_time_axis_items <= 3:
-        if time_axis_items[0] != "groupedby":
-            raise ValueError(
-                f"Expected 'time_point' to start with 'groupedby', got {time_axis}"
-            )
-        groupby = time_axis_items[1]
-        if len(time_axis_items) > 2:
-            try:
-                group = int(time_axis_items[-1])
-            except ValueError:
-                group = time_axis_items[-1]
-    elif len_time_axis_items > 3:
-        raise ValueError(
-            "Expected 'time_axis' to be in format 'groupedby.{{grouping}}."
-            f"{{group}}', got {time_axis}"
-        )
+    # Get the groupby and group values
+    try:
+        _, groupby, *group_ = time_axis.split(".")
+        group = int(group_[0]) if group_ else None
+    except ValueError:
+        groupby = None
+        group = None
 
     # Stack the x and y dimensions into a single grid index if necessary
     if "x" in da_prediction.dims and "y" in da_prediction.dims:
         da_prediction = da_prediction.stack(grid_index=["x", "y"])
     if "x" in da_reference.dims and "y" in da_reference.dims:
         da_reference = da_reference.stack(grid_index=["x", "y"])
-    # Apply statistical operation
+
+    # Apply statistical operation(s)
     da_metric: xr.DataArray | xr.core.groupby.DataArrayGroupBy = stats_operation(
         da_reference,
         da_prediction,
@@ -174,41 +180,19 @@ def plot_single_metric_timeseries(  # noqa: C901
         )
 
     if group is not None:
-        if isinstance(da_metric, xr.DataArray):
-            da_metric = da_metric.sel({groupby: group})
-        elif isinstance(da_metric, xr.core.groupby.DataArrayGroupBy):
-            da_metric = da_metric[group]
-        else:
-            raise ValueError(
-                "da_metric must be an xr.DataArray or xr.core.groupby.DataArrayGroupBy"
-            )
+        da_metric = select_group(groupby, group, da_metric)  # type: ignore
     elif isinstance(da_metric, xr.core.groupby.DataArrayGroupBy):
-        are_groups_one_dimensional = all(
-            len(da_metric[i]) == 1 for i in range(len(da_metric))
-        )
-        # If all groups are one-dimensional, apply average to turn da_metric
-        # into an xr.DataArray
-        if are_groups_one_dimensional:
-            da_metric = da_metric.mean()
-        else:
-            raise ValueError(
-                "`time_operation` must be provided to reduce the "
-                "da_metric from an xr.core.groupby.DataArrayGroupBy object to "
-                "an xr.DataArray before plotting."
-            )
+        da_metric = reduce_groups(da_metric, expected_num_dims=2)
+
     if axes is None:
         _, axes = plt.subplots()
+
     num_expected_dims = 1 + (hue in da_metric.dims)
     if len(da_metric.dims) != num_expected_dims:
         raise ValueError(
             f"Metric DataArray must have {num_expected_dims} dimension to plot"
             f" a timeseries with hue {hue}. da_metric, however, has dims "
             f"{da_metric.dims}"
-        )
-    if hue not in da_metric.coords:
-        raise ValueError(
-            f"DataArray does not contain a coordinate named {hue}, "
-            + "please use a different coordinate as hue"
         )
 
     # To be able to plot "elapsed" time axis together with `preserve_dim`
@@ -221,8 +205,15 @@ def plot_single_metric_timeseries(  # noqa: C901
                 time_axis_name: da_metric[time_axis_name].astype(int),
             }
         )
+    # Add a legend if there is more than one values of the `hue`
     if xarray_plot_kwargs and "add_legend" not in xarray_plot_kwargs:
         xarray_plot_kwargs["add_legend"] = da_metric[hue].count().values != 1
+
+    if hue not in da_metric.coords:
+        raise ValueError(
+            f"DataArray 'da_metric' does not contain a coordinate named {hue}, "
+            + "please use a different coordinate as hue"
+        )
 
     da_metric.plot.line(
         ax=axes,
@@ -247,9 +238,15 @@ def plot_single_metric_gridded_map(  # noqa: C901
     da_prediction: xr.DataArray,
     stats_operation: Callable = mlverif_stats.difference,
     axes: Optional[plt.Axes] = None,
-    plot_xcoord: Optional[str] = "x",
-    plot_ycoord: Optional[str] = "y",
-    time_selection: Optional[Literal["groupedby.{grouping}.{group}"] | datetime] = None,
+    plot_xcoord: str = "x",
+    plot_ycoord: str = "y",
+    time_selection: Optional[
+        datetime
+        | Annotated[
+            str,
+            BeforeValidator(validate_time_selection),
+        ]
+    ] = None,
     time_operation: Optional[Callable] = None,
     time_op_kwargs: Optional[dict] = None,
     xarray_plot_kwargs: Optional[dict] = None,
@@ -293,7 +290,8 @@ def plot_single_metric_gridded_map(  # noqa: C901
         The y coordinate to use for the plot, by default 'y'
     time_selection : Optional[Literal["groupedby.{grouping}.{group}"] | datetime],
         optional
-        The time selection to plot, by default None
+        The time selection to plot, by default None.
+        Only groupings along time dimension are supported.
     time_operation : Optional[Callable], optional
         Time operation to apply to the time dimension of the calculate da_metric
         dataarray before plotting, by default None
@@ -334,28 +332,12 @@ def plot_single_metric_gridded_map(  # noqa: C901
         da_reference = da_reference.sel(time=time_selection)
         da_prediction = da_prediction.sel(time=time_selection)
     elif isinstance(time_selection, str):
-        time_selection_items = time_selection.split(".")
-        if len(time_selection_items) < 3:
-            raise ValueError(
-                "Expected 'time_selection' to have format "
-                f"'groupedby.{{grouping}}.{{group}}', got {time_selection}"
-            )
-        if time_selection_items[0] != "groupedby":
-            raise ValueError(
-                "Expected 'time_selection' to start with 'groupedby', "
-                f"got {time_selection}"
-            )
-        groupby = time_selection_items[1]
+        # Get the groupby and group values
+        _, groupby, group = time_selection.split(".")
         try:
-            group = int(time_selection_items[-1])
+            group = int(group)
         except ValueError:
-            group = time_selection_items[-1]
-
-    elif time_selection is not None:
-        raise TypeError(
-            "Expected 'time_selection' to be either None, a datetime or a string "
-            f"with format 'groupedby.{{grouping}}.{{group}}', got {type(time_selection)}"
-        )
+            pass
 
     # Apply operations
     da_metric: xr.DataArray | xr.core.groupby.DataArrayGroupBy = stats_operation(
@@ -370,33 +352,15 @@ def plot_single_metric_gridded_map(  # noqa: C901
 
     # Select relevant data:
     if group is not None:
-        if isinstance(da_metric, xr.DataArray):
-            da_metric = da_metric.sel({groupby: group})
-        elif isinstance(da_metric, xr.core.groupby.DataArrayGroupBy):
-            da_metric = da_metric[group]
-        else:
-            raise ValueError(
-                "da_metric must be an xr.DataArray or xr.core.groupby.DataArrayGroupBy"
-            )
+        da_metric = select_group(groupby, group, da_metric)  # type: ignore
 
     if axes is None:
         _, axes = plt.subplots()
 
     if "time" in da_metric.dims and da_metric.sizes["time"] == 1:
         da_metric = da_metric.isel(time=0)
-    if "time" in da_metric.dims and da_metric.sizes["time"] >= 1:
-        if groupby is not None:
-            raise ValueError(
-                "`time_operation` must be provided to reduce dimensionality of "
-                "the dataarray `da_metric` before plotting."
-            )
-        raise ValueError(
-            "Please select a specific time to plot with 'time_selection=<datetime>'"
-        )
-    if len(da_metric.dims) != 2:
-        raise ValueError(
-            "Metric DataArray must have 2 dimensions (x, y) to plot a gridded map"
-        )
+
+    check_dims_for_gridded_map(da_metric, groupby=groupby)
     da_metric.plot.pcolormesh(
         x=plot_xcoord,
         y=plot_ycoord,
@@ -413,7 +377,13 @@ def plot_single_metric_hovmoller(  # noqa: C901
     preserve_dim: str,
     stats_operation: Callable = mlverif_stats.rmse,
     axes: Optional[plt.Axes] = None,
-    time_axis: Literal["groupedby.{grouping}.{group}", "elapsed", "UTC"] = "elapsed",
+    time_axis: (
+        Literal["elapsed", "UTC"]
+        | Annotated[
+            str,
+            BeforeValidator(validate_time_axis),
+        ]
+    ) = "elapsed",
     time_operation: Optional[Callable] = None,
     time_op_kwargs: Optional[dict] = None,
     xarray_plot_kwargs: Optional[dict] = None,
@@ -475,7 +445,8 @@ def plot_single_metric_hovmoller(  # noqa: C901
     axes : plt.Axes, optional
         Axes to plot on, by default None
     time_axis : Literal["groupedby.{grouping}.{group}", "elapsed", "UTC"], optional
-        Time axis to use when plotting, by default "elapsed"
+        Time axis to use when plotting, by default "elapsed".
+        Only groupings along time dimension are supported.
     time_operation : Optional[Callable], optional
         Time operation to apply to the time dimension of the calculate da_metric
         dataarray before plotting, by default None
@@ -504,28 +475,15 @@ def plot_single_metric_hovmoller(  # noqa: C901
         time_axis_name = "time"
         time_dim_names = ["time"]
 
-    time_axis_items = time_axis.split(".")
-    groupby: str | None = None
-    group: str | int | None = None
-    len_time_axis_items = len(time_axis_items)
-    if 2 <= len_time_axis_items <= 3:
-        if time_axis_items[0] != "groupedby":
-            raise ValueError(
-                f"Expected 'time_point' to start with 'groupedby', got {time_axis}"
-            )
-        groupby = time_axis_items[1]
-        if len(time_axis_items) > 2:
-            try:
-                group = int(time_axis_items[-1])
-            except ValueError:
-                group = time_axis_items[-1]
-        else:
+    # Get the groupby and group values
+    try:
+        _, groupby, *group_ = time_axis.split(".")
+        group = int(group_[0]) if group_ else None
+        if group is None:
             time_axis_name = groupby
-    elif len_time_axis_items > 3:
-        raise ValueError(
-            "Expected 'time_axis' to be in format 'groupedby.{{grouping}}."
-            f"{{group}}', got {time_axis}"
-        )
+    except ValueError:
+        groupby = None
+        group = None
 
     # Apply statistical operation
     da_metric: xr.DataArray | xr.core.groupby.DataArrayGroupBy = stats_operation(
@@ -543,28 +501,9 @@ def plot_single_metric_hovmoller(  # noqa: C901
         )
 
     if group is not None:
-        if isinstance(da_metric, xr.DataArray):
-            da_metric = da_metric.sel({groupby: group})
-        elif isinstance(da_metric, xr.core.groupby.DataArrayGroupBy):
-            da_metric = da_metric[group]
-        else:
-            raise ValueError(
-                "da_metric must be an xr.DataArray or xr.core.groupby.DataArrayGroupBy"
-            )
+        da_metric = select_group(groupby, group, da_metric)  # type: ignore
     elif isinstance(da_metric, xr.core.groupby.DataArrayGroupBy):
-        are_groups_two_dimensional = all(
-            len(da_metric[i]) == 2 for i in range(len(da_metric))
-        )
-        # If all groups are one-dimensional, apply average to turn da_metric
-        # into an xr.DataArray
-        if are_groups_two_dimensional:
-            da_metric = da_metric.mean()
-        else:
-            raise ValueError(
-                "`time_operation` must be provided to reduce the "
-                "da_metric from an xr.core.groupby.DataArrayGroupBy object to "
-                "an xr.DataArray before plotting."
-            )
+        da_metric = reduce_groups(da_metric, expected_num_dims=2)
 
     if axes is None:
         _, axes = plt.subplots()
