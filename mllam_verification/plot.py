@@ -8,7 +8,7 @@ import xarray as xr
 from pydantic import BeforeValidator, validate_call
 
 import mllam_verification.operations.statistics as mlverif_stats
-from mllam_verification.array_handling import reduce_groups, select_group
+from mllam_verification.operations.array_handling import reduce_groups, select_group
 from mllam_verification.validation import (
     check_dims_for_gridded_map,
     validate_time_axis,
