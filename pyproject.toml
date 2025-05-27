@@ -18,9 +18,12 @@
 [dependency-groups]
   dev = [
     "pytest>=8.0.2",
- "pre-commit>=3.7.1",
- "ipdb>=0.13.13",
- "black[jupyter]>=25.1.0",
+    "pre-commit>=3.7.1",
+    "ipdb>=0.13.13",
+    "black[jupyter]>=25.1.0",
+    "flake8>=7.2.0",
+    "isort>=6.0.1",
+    "setuptools>=80.9.0",   # needed by isort
 ]
   docs = ["ipykernel>=6.29.5", "cartopy>=0.23.0"]
 
@@ -28,8 +31,8 @@
   requires = ["pdm-backend"]
   build-backend = "pdm.backend"
 
-[tool.isort]
-  profile = "black"
-
 [tool.pdm]
   distribution = true
+
+[tool.black]
+  line-length = 90

@@ -82,9 +82,7 @@ def fixture_gaussian_blob(meshgrid: MeshGrid):
 
 
 @pytest.fixture(name="moving_gaussian_blob", scope="session")
-def fixture_moving_gaussian_blob(
-    unique_reference_times: NDArray, gaussian_blob: NDArray
-):
+def fixture_moving_gaussian_blob(unique_reference_times: NDArray, gaussian_blob: NDArray):
     """Fixture of a 3D array representing a moving Gaussian blob."""
     return xr.DataArray(
         np.array(
@@ -323,9 +321,7 @@ def fixture_da_reference_2d_elapsed(
         },
         dims=["start_time", "elapsed_forecast_duration", "x", "y"],
     )
-    return da.assign_coords(datasource="forecast").expand_dims(
-        {"datasource": 1}, axis=-1
-    )
+    return da.assign_coords(datasource="forecast").expand_dims({"datasource": 1}, axis=-1)
 
 
 @pytest.fixture(name="da_prediction_2d_elapsed", scope="session")
@@ -358,15 +354,18 @@ def fixture_da_prediction_2d_elapsed(
 @pytest.fixture(name="da_reference_2d_utc", scope="session")
 def fixture_da_reference_2d_utc(
     moving_gaussian_blob: xr.DataArray,
+    meshgrid: MeshGrid,
 ) -> xr.DataArray:
     """Fixture that returns DataArray of 2d moving gaussian blobs reference data.
 
     The reference data is aligned with the prediction data and only contains
     relevant times.
     """
-    return moving_gaussian_blob.assign_coords(datasource="forecast").expand_dims(
-        {"datasource": 1}, axis=-1
-    )
+    return moving_gaussian_blob.assign_coords(
+        datasource="forecast",
+        x=meshgrid.x[0, :],
+        y=meshgrid.y[:, 0],
+    ).expand_dims({"datasource": 1}, axis=-1)
 
 
 @pytest.fixture(name="da_prediction_2d_utc", scope="session")

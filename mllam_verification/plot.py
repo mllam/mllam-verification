@@ -7,7 +7,7 @@ import xarray as xr
 import mllam_verification.operations.statistics as mlverif_stats
 
 
-def plot_single_metric_timeseries(
+def plot_single_metric_timeseries(  # noqa: C901
     da_reference: xr.DataArray,
     da_prediction: xr.DataArray,
     stats_operation: Callable = mlverif_stats.rmse,
@@ -175,9 +175,9 @@ def plot_single_metric_timeseries(
 
     if group is not None:
         if isinstance(da_metric, xr.DataArray):
-            da_metric: xr.DataArray = da_metric.sel({groupby: group})
+            da_metric = da_metric.sel({groupby: group})
         elif isinstance(da_metric, xr.core.groupby.DataArrayGroupBy):
-            da_metric: xr.DataArray = da_metric[group]
+            da_metric = da_metric[group]
         else:
             raise ValueError(
                 "da_metric must be an xr.DataArray or xr.core.groupby.DataArrayGroupBy"
@@ -189,7 +189,7 @@ def plot_single_metric_timeseries(
         # If all groups are one-dimensional, apply average to turn da_metric
         # into an xr.DataArray
         if are_groups_one_dimensional:
-            da_metric: xr.DataArray = da_metric.mean()
+            da_metric = da_metric.mean()
         else:
             raise ValueError(
                 "`time_operation` must be provided to reduce the "
@@ -201,7 +201,9 @@ def plot_single_metric_timeseries(
     num_expected_dims = 1 + (hue in da_metric.dims)
     if len(da_metric.dims) != num_expected_dims:
         raise ValueError(
-            f"Metric DataArray must have {num_expected_dims} dimension to plot a timeseries with hue {hue}. da_metric, however, has dims {da_metric.dims}"
+            f"Metric DataArray must have {num_expected_dims} dimension to plot"
+            f" a timeseries with hue {hue}. da_metric, however, has dims "
+            f"{da_metric.dims}"
         )
     if hue not in da_metric.coords:
         raise ValueError(
@@ -240,11 +242,13 @@ def plot_single_metric_timeseries(
     return axes
 
 
-def plot_single_metric_gridded_map(
+def plot_single_metric_gridded_map(  # noqa: C901
     da_reference: xr.DataArray,
     da_prediction: xr.DataArray,
     stats_operation: Callable = mlverif_stats.difference,
     axes: Optional[plt.Axes] = None,
+    plot_xcoord: Optional[str] = "x",
+    plot_ycoord: Optional[str] = "y",
     time_selection: Optional[Literal["groupedby.{grouping}.{group}"] | datetime] = None,
     time_operation: Optional[Callable] = None,
     time_op_kwargs: Optional[dict] = None,
@@ -255,15 +259,15 @@ def plot_single_metric_gridded_map(
     The metric is calculated from da_reference and da_prediction, which should
     have one of the following specification:
 
-    Dimensions: [time, x, y]
+    Dimensions: [time, `plot_xcoord`, `plot_ycoord`]
     Data variables:
-    - state [time, x, y]:
+    - state [time, `plot_xcoord`, `plot_ycoord`]:
     Coordinates:
     - time:
         the analysis time as a datetime object
-    - x:
+    - `plot_xcoord`:
         the x coordinate of the gridpoint
-    - y:
+    - `plot_ycoord`:
         the y coordinate of the gridpoint
 
     The `time` dimension can be omitted from the dataarray. If it is present,
@@ -283,7 +287,12 @@ def plot_single_metric_gridded_map(
         Statistics operation to calculate the metric, by default mlverif_stats.rmse
     axes : plt.Axes, optional
         Axes to plot on, by default None
-    time_selection : Optional[Literal["groupedby.{grouping}.{group}"] | datetime], optional
+    plot_xcoord : str, optional
+        The x coordinate to use for the plot, by default 'x'
+    plot_ycoord : str, optional
+        The y coordinate to use for the plot, by default 'y'
+    time_selection : Optional[Literal["groupedby.{grouping}.{group}"] | datetime],
+        optional
         The time selection to plot, by default None
     time_operation : Optional[Callable], optional
         Time operation to apply to the time dimension of the calculate da_metric
@@ -302,11 +311,21 @@ def plot_single_metric_gridded_map(
     # Check if dataarrays have necessary dimensions
     if "x" not in da_prediction.dims or "y" not in da_prediction.dims:
         raise ValueError(
-            "Prediction dataarray must have x and y dimensions to plot a gridded map"
+            "Prediction dataarray must have 'x' and 'y' dimensions to plot a gridded map"
         )
     if "x" not in da_reference.dims and "y" not in da_reference.dims:
         raise ValueError(
-            "Reference dataarray must have x and y dimensions to plot a gridded map"
+            "Reference dataarray must have 'x' and 'y' dimensions to plot a gridded map"
+        )
+    if plot_xcoord not in da_prediction.coords or plot_ycoord not in da_prediction.coords:
+        raise ValueError(
+            f"Prediction dataarray does not contain a coordinate named {plot_xcoord} "
+            + f" and/or {plot_ycoord}, please use a different coordinate(s)"
+        )
+    if plot_xcoord not in da_reference.coords or plot_ycoord not in da_reference.coords:
+        raise ValueError(
+            f"Reference dataarray does not contain a coordinate named {plot_xcoord} "
+            + f" and/or {plot_ycoord}, please use a different coordinate(s)"
         )
 
     groupby: str | None = None
@@ -323,7 +342,8 @@ def plot_single_metric_gridded_map(
             )
         if time_selection_items[0] != "groupedby":
             raise ValueError(
-                f"Expected 'time_selection' to start with 'groupedby', got {time_selection}"
+                "Expected 'time_selection' to start with 'groupedby', "
+                f"got {time_selection}"
             )
         groupby = time_selection_items[1]
         try:
@@ -333,7 +353,8 @@ def plot_single_metric_gridded_map(
 
     elif time_selection is not None:
         raise TypeError(
-            f"Expected 'time_selection' to be either None, a datetime or a string with format 'groupedby.{{grouping}}.{{group}}', got {type(time_selection)}"
+            "Expected 'time_selection' to be either None, a datetime or a string "
+            f"with format 'groupedby.{{grouping}}.{{group}}', got {type(time_selection)}"
         )
 
     # Apply operations
@@ -350,9 +371,9 @@ def plot_single_metric_gridded_map(
     # Select relevant data:
     if group is not None:
         if isinstance(da_metric, xr.DataArray):
-            da_metric: xr.DataArray = da_metric.sel({groupby: group})
+            da_metric = da_metric.sel({groupby: group})
         elif isinstance(da_metric, xr.core.groupby.DataArrayGroupBy):
-            da_metric: xr.DataArray = da_metric[group]
+            da_metric = da_metric[group]
         else:
             raise ValueError(
                 "da_metric must be an xr.DataArray or xr.core.groupby.DataArrayGroupBy"
@@ -377,8 +398,8 @@ def plot_single_metric_gridded_map(
             "Metric DataArray must have 2 dimensions (x, y) to plot a gridded map"
         )
     da_metric.plot.pcolormesh(
-        x="lon",
-        y="lat",
+        x=plot_xcoord,
+        y=plot_ycoord,
         ax=axes,
         **xarray_plot_kwargs if xarray_plot_kwargs is not None else {},
     )
@@ -386,7 +407,7 @@ def plot_single_metric_gridded_map(
     return axes
 
 
-def plot_single_metric_hovmoller(
+def plot_single_metric_hovmoller(  # noqa: C901
     da_reference: xr.DataArray,
     da_prediction: xr.DataArray,
     preserve_dim: str,
@@ -523,9 +544,9 @@ def plot_single_metric_hovmoller(
 
     if group is not None:
         if isinstance(da_metric, xr.DataArray):
-            da_metric: xr.DataArray = da_metric.sel({groupby: group})
+            da_metric = da_metric.sel({groupby: group})
         elif isinstance(da_metric, xr.core.groupby.DataArrayGroupBy):
-            da_metric: xr.DataArray = da_metric[group]
+            da_metric = da_metric[group]
         else:
             raise ValueError(
                 "da_metric must be an xr.DataArray or xr.core.groupby.DataArrayGroupBy"
@@ -537,7 +558,7 @@ def plot_single_metric_hovmoller(
         # If all groups are one-dimensional, apply average to turn da_metric
         # into an xr.DataArray
         if are_groups_two_dimensional:
-            da_metric: xr.DataArray = da_metric.mean()
+            da_metric = da_metric.mean()
         else:
             raise ValueError(
                 "`time_operation` must be provided to reduce the "

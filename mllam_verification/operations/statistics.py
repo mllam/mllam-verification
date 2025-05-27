@@ -1,5 +1,5 @@
 from types import FunctionType
-from typing import List, Optional, Tuple
+from typing import List, Mapping, Optional, Tuple
 
 import numpy as np
 import scores.continuous as scc_cont
@@ -8,10 +8,10 @@ import xarray as xr
 xr.set_options(keep_attrs=True)
 
 
-def compute_pipeline_statistic(
+def compute_pipeline_statistic(  # noqa: C901
     datasets: List[xr.Dataset | xr.DataArray],
     stats_op: Optional[str | FunctionType] = None,
-    stats_op_kwargs: Optional[dict] = {},
+    stats_op_kwargs: Optional[Mapping] = None,
     diff_dim: Optional[str] = None,
     n_diff_steps: Optional[int] = 1,
     groupby: Optional[str] = None,
@@ -19,8 +19,10 @@ def compute_pipeline_statistic(
     """Apply a series of operations to compute a specific compound statistic.
 
     The operations applied in order are:
-    1. (If diff_dim != None) Apply diff over the `diff_dim` dimension (default to 1 step diff)
-    2. (If groupby != None) Apply grouping of dataset/dataarray according to the `groupby` index
+    1. (If diff_dim != None) Apply diff over the `diff_dim` dimension
+        (default to 1 step diff)
+    2. (If groupby != None) Apply grouping of dataset/dataarray according
+        to the `groupby` index
     3. Apply the stats_op to the dataarray with the stats_op_kwargs.
 
     Parameters
@@ -31,8 +33,8 @@ def compute_pipeline_statistic(
         Statistic operation to apply. If a string, it must be a valid xarray
         operation. If a FunctionType, it must be a function that takes in
         the datasets/dataarray and returns one new dataset/dataarray, by default None
-    stats_op_kwargs : dict, optional
-        Keyword arguments to pass to the stats_op function, by default {}
+    stats_op_kwargs : Mapping, optional
+        Keyword arguments to pass to the stats_op function, by default None
     diff_dim : str, optional
         Dimension to apply diff over, by default None
     n_diff_steps : int, optional
@@ -70,17 +72,26 @@ def compute_pipeline_statistic(
     datasets = new_datasets
 
     if stats_op:
+        ds_stat: (
+            xr.Dataset
+            | xr.DataArray
+            | xr.core.groupby.DataArrayGroupBy
+            | xr.core.groupby.DataSetGroupBy
+        )
         if isinstance(stats_op, FunctionType):
-            ds_stat: xr.Dataset | xr.DataArray = stats_op(*datasets, **stats_op_kwargs)
+            ds_stat = stats_op(
+                *datasets, **stats_op_kwargs if stats_op_kwargs is not None else {}
+            )
         elif isinstance(stats_op, str):
             if len(datasets) == 1:
                 # Assume that the stats_op is an xarray operation
-                ds_stat: xr.Dataset | xr.DataArray = getattr(datasets[0], stats_op)(
-                    **stats_op_kwargs
+                ds_stat = getattr(datasets[0], stats_op)(
+                    **stats_op_kwargs if stats_op_kwargs is not None else {}
                 )
             else:
                 raise ValueError(
-                    "stats_op as a string is only supported for a single dataset/dataarray"
+                    "stats_op as a string is only supported for a single "
+                    "dataset/dataarray"
                 )
         else:
             raise NotImplementedError(f"stats_op {stats_op} not supported")
@@ -95,9 +106,7 @@ def compute_pipeline_statistic(
 
         if groupby:
             # Apply the groupby operation
-            ds_stat: (
-                xr.core.groupby.DataArrayGroupBy | xr.core.groupby.DataSetGroupBy
-            ) = ds_stat.groupby(groupby)
+            ds_stat = ds_stat.groupby(groupby)
 
         return ds_stat
 
