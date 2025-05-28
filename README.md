@@ -1,64 +1,79 @@
 # mllam-verification
-Verification of neural-lam, e.g. performance of the model relative to the truth, persistence, etc.
 
-## General API patterns
+[![Linting](https://github.com/mllam/mllam-verification/actions/workflows/ci-pre-commit.yml/badge.svg?branch=main)](https://github.com/mllam/mllam-verification/actions/workflows/ci-pre-commit.yml)
 
-- Every plot function should have ax = None as input argument. If no axes is provided, a new figure with appropriate settings/features (e.g. coastlines for maps) should be created. Otherwise, the plot should be added to the provided axes on top of the existing plot with a zorder = 10*n, where n is an integer. One can also specify zorder as input argument to the plot function to place the plot at a specific place in the plot hierarchy.
-- Every plot function should have an include_persistence input argument, that defaults to True if it is possible to add persistence for the given plot type, and False if not. If include_persistence = True , but the plot doesn't support plotting the persistence an error should be raised.
-- If needed, the persistence should be added beforehand to the dataset for which the statistics are to be calculated, such that one can call the calculate_pipeline_statistics function just with one dataset.
-- Every plot function should take the metric to compute and plot as input argument.
-- The functions shall be callable from JupyterNotebook/Python script and the CLI.
-- The top-level plot functions should be named according to the plot they produce. They should not directly contain the logic to actually compute the metrics, but instead call other compute functions to do that.
+This package exposes various plotting routines for verification of prediction data relative to some reference data. The plotting functions are meant to be used in JupyterNotebooks or Python scripts, and thus no CLI is provided.
 
-- Placer validering af dimensioner/coordinater efter metric beregningen da denne beregning skal laves layzily i Dask og derfor sker beregningen ikke før data skal bruges i plottet.
-- Giv plot funktionen x,y arg names der indikerer hvad der skal bruges som x og y
-- Giv plot funktionen dataarrays hvor variablerne allerede er valgt ud -> fjern variabel input argumentet.
-- Lav én compute pipeline statistics function som tager "metric" som argument og kan kalde metrik beregningen fra eksterne moduler. Tag udgangspunkt i den eksisterende compute_pipeline_statistics function i mllam-verification-old. 
+The plotting routines accept a handle to a callable, which is used for calculating the statistical metric to plot. Let's take the `plot_single_metric_timeseries` function as an example:
 
-### Example on python functions
+```python
+from mllam_verification.plot import plot_single_metric_timeseries
+from mllam_verification.operations.statistics import rmse
 
-In [mllam_verification.plot] there is an example on a plot function that plots the single-metric-timeseries plot
-
-This plot function will first add persistence to the dataset for which one should calculate the statistics (only if needed), and then call a calculate_pipeline_statistics function.
-
-This latter function will make use of statistics functions located in statistics.py. The statistics.py functions will be able to call statistics function from external packages, e.g. the `scores` python package, by simply specifying the package as an input argument, and add relevant cf compliant cell_methods.
-
-## Python API
-The mllam_verification package should be structured according to this directory structure. As an example, the above plot function plot_single_metric_timeseries will be located in mllam_verification/plot.py .
-
-```
-.
-├── mllam_verification
-│   ├── operations
-│   │   ├── __init__.py
-│   │   ├── loading.py                  # Contains functions for loading data
-│   │   ├── saving.py                   # Contains functions for saving data and plots
-│   │   └── statistics.py               # Contains functions for computing statistics e.g. mean, std, etc.
-│   ├── __init__.py
-│   ├── __main__.py                     # Entry point of the package
-│   ├── argument_parser.py              # Contains CLI argument parser
-│   └── plot.py                         # Main script for producing plots
-└── tests
-    ├── conftest.py
-    ├── unit
-    │   ├── conftest.py
-    │   └── ...
-    └── integration
-        ├── conftest.py
-        └── ...
-├── pdm.lock
-├── pyproject.toml
-└── README.md
+ax = plot_single_metric_timeseries(
+    da_reference,
+    da_prediction,
+    time_axis="UTC",
+    stats_operation=rmse,
+    hue="analysis_time",
+)
 ```
 
-## Supported plots
-The following is a first draft on the plots we want to make available in the mllam-verification package and what they support:
+The `plot_single_metric_timeseries` function will call the `rmse` function to compute the RMSE between the reference and prediction data before plotting. An axes object is returned, which can be used to add more plots to the same figure, or to adjust the axes layout.
+
+The following table outlines the different types of plots one can produce with the mllam-verification package and what they support. More to come!
 | Name                        | Plot function name                  | Example          | Grouped | Elapsed | UTC | Multi | Multi model | Multi variable | Point | Regular |
 |-----------------------------|-------------------------------------|------------------|---------|---------|-----|-------|-------------|---------------|-------|---------|
 | Single metric timeseries    | `plot_single_metric_timeseries`    | ![single_metric_timeseries_example](./docs/_images/single_metric_timeseries_example.png) | ✅¹| ✅¹| ✅ | ✅ | ❌ | ❌ | ✅ | ✅ |
 | Single metric hovmöller     | `plot_single_metric_hovmoller`     | ![single_metric_hovmoller_example](./docs/_images/single_metric_hovmoller_example.png) | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ |
 | Single metric gridded map   | `plot_single_metric_gridded_map`   | ![single_metric_gridded_map](./docs/_images/single_metric_gridded_map_example.png) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
-| Single metric point map     | `plot_single_metric_point_map`     | ![single_metric_point_map](./docs/_images/single_metric_point_map_example.png) | ✅ | ❌ | ❌ | ✅² | ✅² | ❌ | ✅ | ✅ |
+~~single metric point map~~²     | ~~`plot_single_metric_point_map`~~ ²     | ![single_metric_point_map](./docs/_images/single_metric_point_map_example.png) | ✅ | ❌ | ❌ | ✅² | ✅² | ❌ | ✅ | ✅ |
 
 ¹ without persistence\
-² maybe not a good idea e.g. if points overlap in grid.
+² not supported yet, but soon to come\
+³ maybe not a good idea e.g. if points overlap in grid.
+
+## Developing `mllam-data-prep`
+
+To work on developing `mllam-verification` it is easiest to install and manage the dependencies with [uv](https://docs.astral.sh/uv/getting-started/installation/). To get started clone your fork of [the main repo](https://github.com/mllam/mllam-verification) locally:
+
+```bash
+git clone https://github.com/<your-github-username>/mllam-verification
+cd mllam-verification
+```
+
+You can now e.g. run tests of `mllam-verification` with uv directly
+```bash
+uv run pytest
+```
+or you can first create a virtualenv and install the dependencies
+```bash
+uv venv
+uv sync --all-extras
+uv run pytest
+```
+
+All the linting is handelled by `pre-commit` which can be setup to automatically be run on each `git commit` by installing the git commit hook:
+
+```bash
+uv run pre-commit install
+```
+
+Then branch, commit, push and make a pull-request :)
+
+## Repo structure
+```
+.
+├── mllam_verification
+│   ├── operations
+│   │   ├── __init__.py
+│   │   ├── array_handling.py           # Contains helper functions for array operations
+│   │   └── statistics.py               # Contains functions for computing statistics e.g. mean, std, etc.
+│   ├── __init__.py
+│   ├── __main__.py                     # Entry point of the package
+│   ├── plot.py                         # Main script for producing plots
+│   └── validation.py                   # Contains functionality to validate function arguments
+├── uv.lock
+├── pyproject.toml
+└── README.md
+```
