@@ -1,31 +1,39 @@
 [project]
-name = "mllam-verification"
-version = "0.1.0"
-description = "Verification of neural-lam, e.g. performance of the model relative to the truth, persistence, etc."
-authors = [
-    {name = "Martin Frølund", email = "maf@dmi.dk"},
-]
-dependencies = [
+  name = "mllam-verification"
+  version = "0.1.0"
+  description = "Verification of neural-lam, e.g. performance of the model relative to the truth, persistence, etc."
+  authors = [{ name = "Martin Frølund", email = "maf@dmi.dk" }]
+  dependencies = [
     "xarray>=2024.2.0",
     "zarr>=2.17.0",
     "loguru>=0.7.2",
+    "matplotlib>=3.9.4",
+    "scores>=1.2.0",
+    "dask[distributed]>=2024.8.0",
+    "pydantic>=2.11.5",
 ]
-requires-python = ">=3.9"
-readme = "README.md"
-license = {text = "MIT"}
+  requires-python = ">=3.9"
+  readme = "README.md"
+  license = { text = "MIT" }
 
-[build-system]
-requires = ["pdm-backend"]
-build-backend = "pdm.backend"
-
-
-[tool.isort]
-profile = "black"
-
-[tool.pdm]
-distribution = true
-[tool.pdm.dev-dependencies]
-dev = [
+[dependency-groups]
+  dev = [
     "pytest>=8.0.2",
     "pre-commit>=3.7.1",
+    "ipdb>=0.13.13",
+    "black[jupyter]>=25.1.0",
+    "flake8>=7.2.0",
+    "isort>=6.0.1",
+    "setuptools>=80.9.0",   # needed by isort
 ]
+  docs = ["ipykernel>=6.29.5", "cartopy>=0.23.0"]
+
+[build-system]
+  requires = ["pdm-backend"]
+  build-backend = "pdm.backend"
+
+[tool.pdm]
+  distribution = true
+
+[tool.black]
+  line-length = 90
